@@ -6,10 +6,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..app_config import Cfg
-from ..db import get_db
-from ..models import Assignment, Need, Offer, Participant, Report, User, utcnow
-from ..security import mask_phone
+from ..core.app_config import Cfg
+from ..core.security import mask_phone
+from ..db.models import Assignment, Need, Offer, Participant, Report, User, utcnow
+from ..db.session import get_db
 from ..services import agencies, confirmation, dispatch
 from ..services.geo import haversine_km
 from ..services.trust import trust_payload
@@ -47,10 +47,9 @@ def offer_view(db: Session, offer: Offer, cfg: Cfg) -> dict:
         "received_at": iso(report.received_at),
         "photo_urls": report.photo_urls or [],
         "distance_km": offer.distance_km,
-        "need": {"id": need.id, "label": cfg["need_catalog"].get(need.category, {}).get("label", need.category),
-                 "skill": need.skill, "quota": need.quota, "accepted": dispatch.accepted_count(db, need.id),
-                 "status": need.status},
-        "matched_skill": need.skill,
+        "need": {"id": need.id, "label": need.skill.name, "skill": need.skill.name, "skill_id": need.skill_id,
+                 "quota": need.quota, "accepted": dispatch.accepted_count(db, need.id), "status": need.status},
+        "matched_skill": need.skill.name,
         "reporter_trust": trust_payload(db, report.reporter_id, cfg),  # FR-9.3
         "contact_phone_masked": mask_phone(report.contact_phone),
         "is_alarm": offer.batch_number is not None,
@@ -138,8 +137,9 @@ def task_view(db: Session, a: Assignment, user: User) -> dict:
         "photo_urls": report.photo_urls or [],
         "role": a.role,
         "order_number": a.order_number,  # "relawan ke-N" (5.10)
-        "skill": need.skill,
-        "need_label": cfg["need_catalog"].get(need.category, {}).get("label", need.category),
+        "skill": need.skill.name,
+        "skill_id": need.skill_id,
+        "need_label": need.skill.name,
         "need_quota": need.quota,
         "need_accepted": dispatch.accepted_count(db, need.id),
         "travel_status": a.travel_status,
@@ -212,7 +212,7 @@ def open_needs(user: User = Depends(current_user), db: Session = Depends(get_db)
     out = []
     rows = db.execute(select(Need, Report).join(Report, Report.id == Need.report_id)
                       .where(Report.status == "active", Need.status.in_(("belum_ada", "sebagian")))).all()
-    skills = {s.skill.lower() for s in user.volunteer.skills}
+    skills = {s.skill_id for s in user.volunteer.skills}
     for need, report in rows:
         if report.reporter_id == user.id:
             continue
@@ -221,8 +221,8 @@ def open_needs(user: User = Depends(current_user), db: Session = Depends(get_db)
             continue
         out.append({
             "need_id": need.id, "report_id": report.id, "incident_label": dispatch.incident_label(report),
-            "label": cfg["need_catalog"].get(need.category, {}).get("label", need.category),
-            "skill": need.skill, "skill_match": need.skill.lower() in skills,
+            "label": need.skill.name, "skill": need.skill.name, "skill_id": need.skill_id,
+            "skill_match": need.skill_id in skills,
             "quota": need.quota, "accepted": dispatch.accepted_count(db, need.id), "status": need.status,
             "distance_km": round(d, 2), "address_text": report.address_text,
         })

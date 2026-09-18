@@ -1,7 +1,7 @@
 """Environment settings (infrastructure only).
 
 Business tunables (weights, radius, timeouts, quotas, ...) live in the
-``app_config`` table instead -- see ``app/app_config.py``.
+``app_config`` table instead -- see ``app/core/app_config.py``.
 """
 from functools import lru_cache
 from pathlib import Path
@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     jwt_expire_days: int = 30
     simulate_otp: bool = True
 
-    anthropic_api_key: str = ""
-    llm_model: str = "claude-opus-5"
+    groq_api_key: str = ""
+    llm_model: str = "llama-3.3-70b-versatile"
     llm_timeout_seconds: float = 5.0
 
     supabase_url: str = ""

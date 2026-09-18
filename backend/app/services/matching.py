@@ -19,8 +19,8 @@ class VolunteerInput:
     lat: float | None
     lng: float | None
     is_active: bool
-    # skill name -> (evidence type, verified experience count)
-    skills: dict[str, tuple[str, int]]
+    # skill_id -> (evidence type, verified experience count)
+    skills: dict[int, tuple[str, int]]
     completion_count: int = 0
     disaster_experience: dict[str, int] = field(default_factory=dict)
     selection_count: int = 0
@@ -44,22 +44,18 @@ def diminishing(x: int, cap: int = 10) -> float:
     return math.log(1 + min(x, cap)) / math.log(1 + cap)
 
 
-def skill_matches(required: str, skills: dict[str, tuple[str, int]]) -> str | None:
-    """Exact (case-insensitive) match only -- MVP has no skill similarity (4.2)."""
-    req = required.strip().lower()
-    for name in skills:
-        if name.strip().lower() == req:
-            return name
-    return None
+def skill_matches(required: int, skills: dict[int, tuple[str, int]]) -> int | None:
+    """Exact match only -- MVP has no skill similarity (4.2)."""
+    return required if required in skills else None
 
 
-def score_volunteer(v: VolunteerInput, required_skill: str, disaster_type: str,
+def score_volunteer(v: VolunteerInput, required_skill: int, disaster_type: str,
                     lat: float, lng: float, cfg) -> Candidate | None:
     """Return a scored Candidate, or None if any hard filter fails."""
     if not v.is_active or v.lat is None or v.lng is None:
         return None
-    skill_name = skill_matches(required_skill, v.skills)
-    if skill_name is None:
+    matched_skill_id = skill_matches(required_skill, v.skills)
+    if matched_skill_id is None:
         return None
     max_km = float(cfg["max_distance_km"])
     d_km = haversine_km(v.lat, v.lng, lat, lng)
@@ -67,7 +63,7 @@ def score_volunteer(v: VolunteerInput, required_skill: str, disaster_type: str,
         return None
 
     cap = int(cfg["experience_cap"])
-    evidence_type, ve_count = v.skills[skill_name]
+    evidence_type, ve_count = v.skills[matched_skill_id]
     e = float(cfg["evidence_scores"].get(evidence_type, cfg["evidence_scores"]["self_declared"]))
     ve = diminishing(ve_count, cap)
     d = max(0.0, 1 - d_km / max_km)
@@ -111,7 +107,7 @@ def apply_fairness(ranked: list[Candidate], threshold: float) -> list[Candidate]
     return out
 
 
-def rank_candidates(volunteers: list[VolunteerInput], required_skill: str, disaster_type: str,
+def rank_candidates(volunteers: list[VolunteerInput], required_skill: int, disaster_type: str,
                     lat: float, lng: float, cfg, exclude_user_ids: set[str] = frozenset()) -> list[Candidate]:
     scored = []
     for v in volunteers:

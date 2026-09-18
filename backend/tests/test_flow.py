@@ -4,13 +4,14 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.models import (
+from app.db.models import (
     Assignment,
     Need,
     Notification,
     Offer,
     Participant,
     Report,
+    Skill,
     User,
     VolunteerProfile,
     VolunteerSkill,
@@ -23,10 +24,15 @@ SITE = (-6.1470, 106.8055)
 TEXT = "Kebakaran rumah di Gang Mawar RT 05, ada lansia terjebak. Gang sempit."
 
 
-def signup(client, phone, name="User", volunteer_skills=None):
+def skill_id_for(db, name: str) -> int:
+    return db.scalar(select(Skill).where(Skill.name == name)).id
+
+
+def signup(client, db, phone, name="User", volunteer_skills=None):
     body = {"name": name, "phone": phone, "password": "rahasia1"}
     if volunteer_skills:
-        body |= {"become_volunteer": True, "skills": [{"skill": s} for s in volunteer_skills]}
+        body |= {"become_volunteer": True,
+                 "skills": [{"skill_id": skill_id_for(db, s)} for s in volunteer_skills]}
     r = client.post("/auth/register", json=body)
     assert r.status_code == 200, r.text
     r = client.post("/auth/verify-otp", json={"phone": phone, "code": r.json()["dev_otp"]})
@@ -35,7 +41,8 @@ def signup(client, phone, name="User", volunteer_skills=None):
     return {"Authorization": f"Bearer {token}"}, r.json()["user"]["id"]
 
 
-def add_volunteers(db, n, skill="Evakuasi", start_km=0.3, step_km=0.3):
+def add_volunteers(db, n, skill_name="P3K", start_km=0.3, step_km=0.3):
+    skill_id = skill_id_for(db, skill_name)
     ids = []
     for i in range(n):
         lat, lng = offset_point(*SITE, start_km + i * step_km, 40 * i)
@@ -44,22 +51,22 @@ def add_volunteers(db, n, skill="Evakuasi", start_km=0.3, step_km=0.3):
         db.add(u)
         db.flush()
         db.add(VolunteerProfile(user_id=u.id, is_active=True))
-        db.add(VolunteerSkill(user_id=u.id, skill=skill))
+        db.add(VolunteerSkill(user_id=u.id, skill_id=skill_id))
         ids.append(u.id)
     db.commit()
     return ids
 
 
-def create_active_report(client, headers, quota=2, category="evakuasi"):
+def create_active_report(client, headers, db, quota=2, skill_name="P3K"):
     r = client.post("/reports", headers=headers, json={"description": TEXT, "lat": SITE[0], "lng": SITE[1]})
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["report"]["status"] == "draft"
-    assert "evakuasi" in [n["category"] for n in data["proposed_needs"]]
+    assert data["proposed_needs"] == []  # manual selection until Task 4 wires real AI proposals
     rid = data["report"]["id"]
     r = client.post(f"/reports/{rid}/confirm", headers=headers,
-                    json={"needs": [{"category": category, "quota": quota}],
-                          "fields": {"kondisi_akses": "gang sempit"}})
+                    json={"needs": [{"skill_id": skill_id_for(db, skill_name), "quota": quota}],
+                          "fields": {}})
     assert r.status_code == 200, r.text
     return rid
 
@@ -90,7 +97,7 @@ def test_report_requires_account(client):
 
 
 def test_volunteer_toggle_and_reporter_can_still_report(client, db):
-    h, uid = signup(client, "081200001111", volunteer_skills=["P3K"])
+    h, uid = signup(client, db, "081200001111", volunteer_skills=["P3K"])
     r = client.patch("/me/volunteer/active", headers=h, json={"is_active": False})
     assert r.json()["volunteer"]["is_active"] is False
     r = client.post("/reports", headers=h, json={"description": TEXT, "lat": SITE[0], "lng": SITE[1]})
@@ -99,8 +106,8 @@ def test_volunteer_toggle_and_reporter_can_still_report(client, db):
 
 def test_full_dispatch_flow(client, db):
     vols = add_volunteers(db, 8)
-    rep_h, rep_id = signup(client, "081200000009", "Pelapor")
-    rid = create_active_report(client, rep_h, quota=2)
+    rep_h, rep_id = signup(client, db, "081200000009", "Pelapor")
+    rid = create_active_report(client, rep_h, db, quota=2)
 
     offers = offers_of(db, rid)
     assert len(offers) == 8
@@ -203,9 +210,84 @@ def test_full_dispatch_flow(client, db):
     assert all(a.status == "selesai" for a in db.scalars(select(Assignment).where(Assignment.report_id == rid)))
 
 
+def test_cross_skill_credit_fills_second_need_without_separate_alarm(client, db):
+    rep_h, _ = signup(client, db, "081200000020", "Pelapor Multi")
+    p3k_id = skill_id_for(db, "P3K")
+    apar_id = skill_id_for(db, "Penggunaan APAR")
+
+    # one volunteer with BOTH skills, close by
+    multi_h, multi_id = signup(client, db, "081200000021", "Relawan Serba Bisa",
+                               volunteer_skills=["P3K", "Penggunaan APAR"])
+    client.post("/me/location", headers=multi_h, json={"lat": SITE[0] + 0.005, "lng": SITE[1]})
+
+    r = client.post("/reports", headers=rep_h, json={"description": TEXT, "lat": SITE[0], "lng": SITE[1]})
+    rid = r.json()["report"]["id"]
+    r = client.post(f"/reports/{rid}/confirm", headers=rep_h,
+                    json={"needs": [{"skill_id": p3k_id, "quota": 1}, {"skill_id": apar_id, "quota": 1}],
+                          "fields": {}})
+    assert r.status_code == 200, r.text
+
+    offers = offers_of(db, rid)
+    p3k_offer = next(o for o in offers if db.get(Need, o.need_id).skill_id == p3k_id)
+    assert p3k_offer.volunteer_id == multi_id  # only volunteer in range
+
+    a = dispatch.accept_offer(db, p3k_offer)
+    db.commit()
+
+    apar_need = db.scalar(select(Need).where(Need.report_id == rid, Need.skill_id == apar_id))
+    assert apar_need.status == "penuh"  # credited without a separate offer/alarm
+    assert dispatch.accepted_count(db, apar_need.id) == 1
+    db.expire_all()
+    assert sorted(db.get(Assignment, a.id).credited_skill_ids) == [apar_id]
+
+    # ---- experience update on resolution (4.12) credits BOTH skills --------
+    report = db.get(Report, rid)
+    confirmation.resolve(db, report, "quorum")
+    db.commit()
+    db.expire_all()
+    profile = db.get(VolunteerProfile, multi_id)
+    by_skill = {s.skill_id: s.verified_experience for s in profile.skills}
+    assert by_skill[p3k_id] == 1
+    assert by_skill[apar_id] == 1
+
+
+def test_release_assignment_reverts_credited_need_status(client, db):
+    """A need only filled via cross-skill credit must not stay stuck 'penuh'
+    forever once its sole coverage is released -- otherwise dispatch.tick can
+    never see or re-alarm it again (it only scans belum_ada/sebagian needs)."""
+    rep_h, _ = signup(client, db, "081200000022", "Pelapor Multi 2")
+    p3k_id = skill_id_for(db, "P3K")
+    apar_id = skill_id_for(db, "Penggunaan APAR")
+
+    multi_h, multi_id = signup(client, db, "081200000023", "Relawan Serba Bisa 2",
+                               volunteer_skills=["P3K", "Penggunaan APAR"])
+    client.post("/me/location", headers=multi_h, json={"lat": SITE[0] + 0.005, "lng": SITE[1]})
+
+    r = client.post("/reports", headers=rep_h, json={"description": TEXT, "lat": SITE[0], "lng": SITE[1]})
+    rid = r.json()["report"]["id"]
+    r = client.post(f"/reports/{rid}/confirm", headers=rep_h,
+                    json={"needs": [{"skill_id": p3k_id, "quota": 1}, {"skill_id": apar_id, "quota": 1}],
+                          "fields": {}})
+    assert r.status_code == 200, r.text
+
+    offers = offers_of(db, rid)
+    p3k_offer = next(o for o in offers if db.get(Need, o.need_id).skill_id == p3k_id)
+    a = dispatch.accept_offer(db, p3k_offer)
+    db.commit()
+
+    apar_need = db.scalar(select(Need).where(Need.report_id == rid, Need.skill_id == apar_id))
+    assert apar_need.status == "penuh"
+
+    dispatch.release_assignment(db, a)
+    db.commit()
+    db.expire_all()
+    apar_need = db.scalar(select(Need).where(Need.report_id == rid, Need.skill_id == apar_id))
+    assert apar_need.status == "belum_ada"
+
+
 def test_no_candidates_is_visible_not_silent(client, db):
-    rep_h, _ = signup(client, "081200000010")
-    rid = create_active_report(client, rep_h, quota=3, category="medis")
+    rep_h, _ = signup(client, db, "081200000010")
+    rid = create_active_report(client, rep_h, db, quota=3)
     view = client.get(f"/reports/{rid}", headers=rep_h).json()
     assert view["status"] == "active"
     assert view["needs"][0]["status"] == "belum_ada" and view["needs"][0]["exhausted"] is True
@@ -213,17 +295,17 @@ def test_no_candidates_is_visible_not_silent(client, db):
 
 def test_reporter_never_matched_to_own_report(client, db):
     add_volunteers(db, 2)
-    h, uid = signup(client, "081200000011", volunteer_skills=["Evakuasi"])
+    h, uid = signup(client, db, "081200000011", volunteer_skills=["P3K"])
     client.post("/me/location", headers=h, json={"lat": SITE[0], "lng": SITE[1]})
-    rid = create_active_report(client, h)
+    rid = create_active_report(client, h, db)
     assert uid not in {o.volunteer_id for o in offers_of(db, rid)}
 
 
 def test_volunteer_api_accept_and_task(client, db):
-    rep_h, _ = signup(client, "081200000012")
-    vol_h, vol_id = signup(client, "081200000013", "Relawan Asli", volunteer_skills=["Evakuasi"])
+    rep_h, _ = signup(client, db, "081200000012")
+    vol_h, vol_id = signup(client, db, "081200000013", "Relawan Asli", volunteer_skills=["P3K"])
     client.post("/me/location", headers=vol_h, json={"lat": SITE[0] + 0.005, "lng": SITE[1]})
-    rid = create_active_report(client, rep_h, quota=1)
+    rid = create_active_report(client, rep_h, db, quota=1)
 
     reqs = client.get("/volunteer/requests", headers=vol_h).json()
     assert len(reqs) == 1 and reqs[0]["alarm_active"] is True
@@ -250,10 +332,10 @@ def test_volunteer_api_accept_and_task(client, db):
 
 
 def test_sighting_and_nearby_widget(client, db):
-    rep_h, _ = signup(client, "081200000014")
-    other_h, _ = signup(client, "081200000015")
+    rep_h, _ = signup(client, db, "081200000014")
+    other_h, _ = signup(client, db, "081200000015")
     client.post("/me/location", headers=other_h, json={"lat": SITE[0] + 0.01, "lng": SITE[1]})
-    rid = create_active_report(client, rep_h)
+    rid = create_active_report(client, rep_h, db)
     nearby = client.get("/reports/nearby", headers=other_h).json()
     assert [r["id"] for r in nearby["notified"]] == [rid]
     view = client.post(f"/reports/{rid}/sightings", headers=other_h).json()
@@ -262,7 +344,7 @@ def test_sighting_and_nearby_widget(client, db):
 
 
 def test_trust_tier_from_accuracy(db):
-    from app.models import AccuracyFeedback
+    from app.db.models import AccuracyFeedback
     from app.services.trust import trust_tier
     u = User(name="R", phone="081299999999", password_hash="!")
     db.add(u)
@@ -277,6 +359,6 @@ def test_trust_tier_from_accuracy(db):
 
 
 def test_config_is_tunable(client, db):
-    h, _ = signup(client, "081200000016")
+    h, _ = signup(client, db, "081200000016")
     assert client.put("/config/alarm_seconds", headers=h, json={"value": 60}).json() == {"alarm_seconds": 60}
     assert client.get("/config").json()["alarm_seconds"] == 60

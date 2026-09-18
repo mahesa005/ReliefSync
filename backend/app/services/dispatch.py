@@ -25,8 +25,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from ..app_config import Cfg
-from ..models import (
+from ..core.app_config import Cfg
+from ..db.models import (
     Assignment,
     NearbyNotice,
     Need,
@@ -77,7 +77,7 @@ def volunteer_inputs(db: Session) -> list[matching.VolunteerInput]:
             lat=user.lat,
             lng=user.lng,
             is_active=profile.is_active,
-            skills={s.skill: (s.evidence, s.verified_experience) for s in profile.skills},
+            skills={s.skill_id: (s.evidence, s.verified_experience) for s in profile.skills},
             completion_count=profile.completion_count,
             disaster_experience=dict(profile.disaster_experience or {}),
             selection_count=profile.selection_count,
@@ -91,7 +91,7 @@ def rank_for_need(db: Session, need: Need, report: Report, cfg: Cfg,
                   volunteers: list[matching.VolunteerInput] | None = None) -> list[matching.Candidate]:
     return matching.rank_candidates(
         volunteers if volunteers is not None else volunteer_inputs(db),
-        need.skill, report.incident_type, report.lat, report.lng, cfg,
+        need.skill_id, report.incident_type, report.lat, report.lng, cfg,
         exclude_user_ids={report.reporter_id},
     )
 
@@ -130,7 +130,7 @@ def activate_report(db: Session, report: Report, needs_spec: list[dict], now: da
     users_by_id = {u.id: u for u in db.scalars(select(User).where(User.id.in_([v.user_id for v in volunteers])))}
     notified: set[str] = set()
     for spec in needs_spec:
-        need = Need(report_id=report.id, category=spec["category"], skill=spec["skill"],
+        need = Need(report_id=report.id, skill_id=spec["skill_id"],
                     quota=max(1, int(spec["quota"])), created_at=now)
         db.add(need)
         db.flush()
@@ -185,8 +185,10 @@ def notify_nearby_users(db: Session, report: Report, cfg: Cfg, now: datetime) ->
 # Batches
 # ---------------------------------------------------------------------------
 def accepted_count(db: Session, need_id: str) -> int:
-    return db.scalar(select(func.count()).select_from(Assignment)
-                     .where(Assignment.need_id == need_id, Assignment.status != "dilepas")) or 0
+    need = db.get(Need, need_id)
+    assignments = db.scalars(select(Assignment).where(Assignment.report_id == need.report_id,
+                                                       Assignment.status != "dilepas")).all()
+    return sum(1 for a in assignments if a.need_id == need_id or need.skill_id in (a.credited_skill_ids or []))
 
 
 def remaining_need(db: Session, need: Need) -> int:
@@ -229,13 +231,12 @@ def activate_next_batch(db: Session, need: Need, report: Report, cfg: Cfg, now: 
 
 def _send_offer_notification(db: Session, offer: Offer, need: Need, report: Report, cfg: Cfg, user: User,
                              alarm: bool, trust: dict) -> None:
-    catalog = cfg["need_catalog"]
-    need_label = catalog.get(need.category, {}).get("label", need.category)
+    need_label = need.skill.name
     title = ("🚨 ALARM: " if alarm else "") + f"{incident_label(report)} {offer.distance_km:.1f} km dari Anda"
-    body = f"Dibutuhkan: {need_label} (skill {need.skill}). Pelapor: {trust['label']}."
+    body = f"Dibutuhkan: {need_label}. Pelapor: {trust['label']}."
     notify(db, user, "alarm" if alarm else "standard", title, body, {
         "report_id": report.id, "need_id": need.id, "offer_id": offer.id,
-        "distance_km": offer.distance_km, "skill": need.skill, "need_label": need_label,
+        "distance_km": offer.distance_km, "skill_id": need.skill_id, "skill": need_label,
         "trust_tier": trust["tier"], "trust_label": trust["label"],
         "alarm_seconds": int(cfg["alarm_seconds"]) if alarm else 0,
     })
@@ -292,13 +293,40 @@ def accept_offer(db: Session, offer: Offer, now: datetime | None = None) -> Assi
     ensure_participant(db, report.id, offer.volunteer_id, "relawan")
     db.flush()
     refresh_need_status(db, need)
+    apply_cross_skill_credit(db, assignment, report)
 
     reporter = db.get(User, report.reporter_id)
     volunteer = db.get(User, offer.volunteer_id)
     notify(db, reporter, "info", f"{volunteer.name} menuju lokasi",
-           f"Relawan ke-{order} untuk {need.skill} ({'Bantuan Utama' if role == 'utama' else 'Bantuan Tambahan'}).",
+           f"Relawan ke-{order} untuk {need.skill.name} "
+           f"({'Bantuan Utama' if role == 'utama' else 'Bantuan Tambahan'}).",
            {"report_id": report.id})
     return assignment
+
+
+def apply_cross_skill_credit(db: Session, assignment: Assignment, report: Report) -> None:
+    """After one need's alarm is accepted, check whether the volunteer's other
+    skills also satisfy other still-open needs on the same report, and credit
+    them there too -- without a separate alarm/offer (design doc Part 2)."""
+    profile = db.get(VolunteerProfile, assignment.volunteer_id)
+    if profile is None:
+        return
+    my_skill_ids = {s.skill_id for s in profile.skills}
+    credited: list[int] = []
+    for need in report.needs:
+        if need.id == assignment.need_id or need.status == "selesai":
+            continue
+        if need.skill_id not in my_skill_ids:
+            continue
+        if remaining_need(db, need) <= 0:
+            continue
+        credited.append(need.skill_id)
+    if credited:
+        assignment.credited_skill_ids = credited
+        db.flush()
+        for need in report.needs:
+            if need.skill_id in credited:
+                refresh_need_status(db, need)
 
 
 def reject_offer(db: Session, offer: Offer, now: datetime | None = None) -> Offer:
@@ -326,11 +354,11 @@ def participate(db: Session, report: Report, user: User, now: datetime | None = 
     if offers:
         return accept_offer(db, offers[0], now)
 
-    skills = {s.skill.lower() for s in user.volunteer.skills}
+    skills = {s.skill_id for s in user.volunteer.skills}
     needs = [n for n in report.needs if n.status != "selesai"]
     if not needs:
         raise DispatchError("Laporan ini tidak memiliki kebutuhan terbuka.")
-    needs.sort(key=lambda n: (n.skill.lower() not in skills, -remaining_need(db, n)))
+    needs.sort(key=lambda n: (n.skill_id not in skills, -remaining_need(db, n)))
     need = needs[0]
     d = haversine_km(user.lat, user.lng, report.lat, report.lng) if user.lat is not None else 0.0
     last_rank = db.scalar(select(func.max(Offer.rank)).where(Offer.need_id == need.id)) or 0
@@ -344,17 +372,24 @@ def participate(db: Session, report: Report, user: User, now: datetime | None = 
 
 
 def release_assignment(db: Session, assignment: Assignment) -> None:
-    """Reporter releases a volunteer (4.11: volunteers cannot cancel themselves)."""
+    """Reporter releases a volunteer (4.11: volunteers cannot cancel themselves).
+    Also refreshes any OTHER need this assignment was cross-skill-credited toward
+    (see apply_cross_skill_credit) -- otherwise it stays "penuh" forever, even
+    after its only coverage is gone, and dispatch.tick can never re-alarm it."""
     assignment.status = "dilepas"
     p = db.scalar(select(Participant).where(Participant.report_id == assignment.report_id,
                                             Participant.user_id == assignment.volunteer_id))
     if p is not None:
         p.excluded = True
-    need = db.get(Need, assignment.need_id)
+    report = db.get(Report, assignment.report_id)
+    credited_skill_ids = set(assignment.credited_skill_ids or [])
     db.flush()
-    refresh_need_status(db, need)
-    if need.status != "penuh":
-        need.exhausted = False if _has_waiting(db, need) else need.exhausted
+    for need in report.needs:
+        if need.id != assignment.need_id and need.skill_id not in credited_skill_ids:
+            continue
+        refresh_need_status(db, need)
+        if need.status != "penuh":
+            need.exhausted = False if _has_waiting(db, need) else need.exhausted
 
 
 def _has_waiting(db: Session, need: Need) -> bool:

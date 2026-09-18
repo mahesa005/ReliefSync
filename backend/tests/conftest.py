@@ -7,7 +7,7 @@ os.environ.update({
     "DATABASE_URL": f"sqlite:///{_tmp / 'test.db'}",
     "RUN_ENGINE": "false",
     "SEED_DEMO_DATA": "false",
-    "ANTHROPIC_API_KEY": "",
+    "GROQ_API_KEY": "",
     "SIMULATE_OTP": "true",
     "FIREBASE_CREDENTIALS": "",
     "UPLOAD_DIR": str(_tmp / "uploads"),
@@ -16,10 +16,11 @@ os.environ.update({
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.app_config import seed_config  # noqa: E402
-from app.db import Base, SessionLocal, engine  # noqa: E402
+from app.core.app_config import seed_config  # noqa: E402
+from app.db.session import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services.agencies import seed_agencies  # noqa: E402
+from app.services.skills import seed_skills  # noqa: E402
 
 
 @pytest.fixture
@@ -29,6 +30,7 @@ def db():
     session = SessionLocal()
     seed_config(session)
     seed_agencies(session)
+    seed_skills(session)
     yield session
     session.close()
 

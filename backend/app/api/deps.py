@@ -4,9 +4,9 @@ from datetime import datetime
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
-from ..db import get_db
-from ..models import User
-from ..security import decode_token
+from ..core.security import decode_token
+from ..db.models import User
+from ..db.session import get_db
 
 # Serialises state-changing engine operations (accept, vote, tick, ...) so the
 # background ticker and request handlers never race on the same need.

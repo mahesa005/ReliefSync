@@ -46,3 +46,8 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Local secrets for `flutter run --dart-define-from-file=dart_define.json`.
+# Copy dart_define.example.json to dart_define.json and fill in real values.
+dart_define.json
+.env
