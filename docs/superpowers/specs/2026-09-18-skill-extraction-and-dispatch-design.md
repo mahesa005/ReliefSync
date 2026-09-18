@@ -38,6 +38,8 @@ System prompt must include:
 - The full skill catalog (`id` + `name`), fetched from the DB at call time, so the LLM can only select valid `skill_id`s
 - Domain rules distilled from the "Skill Relawan" reference doc: no automatic inheritance between skills (e.g. P3K does not imply CPR), "Berenang" (swimming) is only relevant for high-water flood contexts, general/non-technical tasks (distribution, registration, communication) are excluded from skill selection
 
+**Fetching the catalog** follows the existing service-layer convention (matches `agencies.py`'s `suggest(db: Session, ...)`): a new `services/skills.py` exposes `list_skills(db: Session) -> list[Skill]` (a plain `select(Skill)` query) — `extraction.py` does not touch the DB itself, staying consistent with its current DB-agnostic design. `extraction.extract()`'s signature changes from `extract(text: str)` to `extract(text: str, skills: list[Skill])`; the caller (`reports.py`, which already holds a request-scoped `db: Session`) fetches the list via `skills_service.list_skills(db)` and passes it in.
+
 **Dropped**: the strict verbatim-evidence enforcement (`enforce_evidence()`) the old schema had. `title`/`description` are LLM-authored summaries, not extracted spans, so "evidence must literally appear in the text" doesn't apply to this schema. This is a deliberate behavior change from today.
 
 ### Fallback (Groq unavailable/timeout/no key)
