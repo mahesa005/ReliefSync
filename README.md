@@ -15,7 +15,7 @@ Laporan -> Ekstraksi AI -> Konfirmasi pelapor -> Kebutuhan -> Hard filter -> Pri
 
 | Bagian | Teknologi | Folder |
 |---|---|---|
-| Aplikasi | Flutter (Provider), font Nunito Sans, peta OpenStreetMap | `app/` |
+| Aplikasi | Flutter (Provider), font Nunito Sans, peta OpenStreetMap (tile via CARTO) | `app/` |
 | Backend | Python FastAPI + SQLAlchemy | `backend/` |
 | Database | Supabase Postgres (atau SQLite lokal tanpa setup) | `backend/supabase/schema.sql` |
 | Notifikasi | Inbox in-app (polling 3 dtk) + FCM opsional | `backend/app/services/notify.py` |
@@ -57,7 +57,7 @@ mengonfirmasi "sudah teratasi", sehingga seluruh alur terlihat hidup dari satu H
 | `GROQ_API_KEY` | Mengaktifkan ekstraksi AI dengan Groq. Tanpa kunci → fallback berbasis aturan. |
 | `LLM_MODEL`, `LLM_TIMEOUT_SECONDS` | Default `llama-3.3-70b-versatile`, 5 detik (NFR-1). Lewat batas waktu → fallback otomatis. |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET` | Simpan foto laporan di Supabase Storage (bucket publik). Kosong → folder `backend/uploads/`. |
-| `FIREBASE_CREDENTIALS` | Path service-account Firebase + `pip install firebase-admin` untuk push FCM sungguhan (kanal `relief_alarm` vs `relief_standard`). |
+| `FIREBASE_CREDENTIALS` | Isi JSON service-account Firebase (atau path ke file-nya; JSON langsung memudahkan hosting seperti Railway) untuk push FCM sungguhan. `firebase-admin` sudah ada di `requirements.txt`. Lihat 2.5. |
 | `SIMULATE_OTP` | `true` (default): kode OTP dikembalikan API dan ditampilkan di aplikasi. |
 | `SEED_DEMO_DATA` | `true` (default): isi relawan simulasi + akun demo. |
 
@@ -86,21 +86,94 @@ Bantuan Utama/Tambahan → AFK → selesai → update pengalaman → trust tier)
 
 ## 2. Menjalankan aplikasi Flutter
 
-Prasyarat: Flutter 3.35+ (teruji di 3.47), Android Studio / Xcode.
+Prasyarat: Flutter 3.35+ (teruji di 3.47). Untuk Android: Android SDK dan **JDK 17-21**. Untuk iOS: Xcode.
+
+### 2.1 Konfigurasi build (`dart_define.json`)
+
+Pengaturan yang ikut tertanam saat build dibaca dari `app/dart_define.json`. File ini **tidak ikut git**;
+salin dari contoh lalu isi:
+
+```bash
+cd app
+cp dart_define.example.json dart_define.json
+```
+
+```json
+{
+  "CARTO_API_KEY": "<key CARTO untuk tile peta>",
+  "API_BASE_URL": "https://reliefsync-production.up.railway.app"
+}
+```
+
+| Kunci | Fungsi |
+|---|---|
+| `CARTO_API_KEY` | API key tile peta CARTO. Kosong → tile diminta tanpa key. |
+| `API_BASE_URL` | Alamat backend. Kosong → `http://10.0.2.2:8000` (emulator Android) atau `http://localhost:8000` (simulator iOS / web), **yang tidak ada di HP asli**. Selalu isi untuk HP fisik atau APK. |
+
+Semua perintah di bawah memakai `--dart-define-from-file=dart_define.json`. Alamat backend juga bisa diganti
+saat aplikasi jalan lewat ikon ⚙️ di layar masuk. Tulis alamat **lengkap dengan skema** (`https://...` atau
+`http://...`); tanpa skema, di web request malah dikirim ke alamat halaman aplikasi itu sendiri.
+
+### 2.2 Menjalankan (debug)
 
 ```bash
 cd app
 flutter pub get
-flutter run                        # emulator Android / simulator iOS
+flutter devices                                       # lihat ID perangkat
+flutter run -d <id> --dart-define-from-file=dart_define.json
 ```
 
-Alamat backend default: `http://10.0.2.2:8000` (emulator Android) atau `http://localhost:8000` (simulator iOS).
-Untuk **HP fisik**, samakan jaringan Wi-Fi dengan laptop lalu:
+Untuk backend lokal dari **HP fisik**, samakan jaringan Wi-Fi dengan laptop dan isi `API_BASE_URL` dengan
+`http://<IP-laptop>:8000`.
 
-- ketuk ikon ⚙️ di layar masuk dan isi `http://<IP-laptop>:8000`, **atau**
-- `flutter run --dart-define=API_BASE_URL=http://<IP-laptop>:8000`
+### 2.3 Build APK (Android)
 
-Build APK: `flutter build apk --release --dart-define=API_BASE_URL=http://<server>:8000`
+```bash
+cd app
+flutter build apk --release --dart-define-from-file=dart_define.json
+```
+
+Hasil: `app/build/app/outputs/flutter-apk/app-release.apk`. Pasang lewat USB
+(`adb install app/build/app/outputs/flutter-apk/app-release.apk`) atau kirim file-nya ke HP.
+
+- APK ditandatangani dengan **kunci debug** bawaan project: cukup untuk uji coba dan dibagikan ke tim,
+  belum untuk Play Store.
+- **JDK 22+ gagal** di Gradle Android. Jika Java bawaan mesin lebih baru, arahkan Flutter ke JDK yang cocok
+  (tanpa mengubah Java sistem): `flutter config --jdk-dir <path-ke-jdk-21>`. Periksa dengan `flutter doctor -v`.
+- Build pertama mengunduh Gradle dan dependency (beberapa GB, bisa belasan menit) dan butuh ruang disk kosong
+  sekitar 9 GB.
+
+### 2.4 Menjalankan ke iPhone
+
+```bash
+cd app
+flutter run --release -d <id-iphone> --dart-define-from-file=dart_define.json
+```
+
+- Mode `--release` membuat aplikasi tetap terpasang dan bisa dibuka dari home screen setelah kabel dicabut
+  (mode debug di iOS 14+ hanya bisa dibuka lewat Flutter/Xcode).
+- Di Xcode (`app/ios/Runner.xcworkspace` → Signing & Capabilities) pilih Team dan ubah **Bundle Identifier**
+  menjadi yang unik. Perubahan ini khusus mesin masing-masing, jangan di-commit.
+- Dengan Apple ID gratis, aplikasi kedaluwarsa setelah **7 hari** (pasang ulang dengan perintah yang sama) dan
+  perlu *Settings → General → VPN & Device Management → Trust* di iPhone.
+- Build iOS pertama mengunduh Firebase iOS SDK lewat Swift Package Manager (lebih dari 1 GB, bisa lama di
+  jaringan lambat; hanya sekali).
+- Push notifikasi belum berjalan di iOS: butuh akun Apple Developer berbayar (APNs) dan konfigurasi Firebase iOS.
+
+### 2.5 Notifikasi push (Android)
+
+Alarm dan notifikasi tetap masuk saat aplikasi tertutup lewat FCM. Konfigurasi aplikasi
+(`app/android/app/google-services.json`, `app/lib/firebase_options.dart`) sudah ada di repo. Yang perlu diatur di
+**backend**: isi `FIREBASE_CREDENTIALS` dengan JSON service-account Firebase (Firebase Console → Project settings →
+Service accounts → *Generate new private key*) lalu redeploy. `/health` menampilkan `"fcm": true` bila variabel
+terisi (bukan jaminan isinya valid; cek log `FCM disabled: ...`).
+
+- **Alarm** dikirim sebagai pesan data dan ditampilkan aplikasi sendiri: layar penuh di atas lock screen dan
+  berdering terus sampai dibuka atau `alarm_seconds` habis. Aplikasi hanya terbuka otomatis bila HP terkunci atau
+  layar mati (aturan Android); saat HP sedang dipakai yang muncul hanya banner.
+- **Notifikasi biasa** memakai kanal `relief_standard` dengan suara bawaan.
+- Android 13+ meminta izin notifikasi, dan Android 14+ meminta izin "notifikasi layar penuh" (sekali). Di beberapa
+  merek (Xiaomi/Oppo/Vivo) aktifkan juga "Autostart" dan matikan optimasi baterai untuk ReliefSync.
 
 ### Skenario demo (±3 menit)
 
@@ -169,9 +242,8 @@ app/
 
 ## 5. Batasan yang diketahui (MVP)
 
-- Notifikasi andal saat aplikasi terbuka (polling). Push saat aplikasi tertutup butuh FCM
-  (`FIREBASE_CREDENTIALS` di backend + konfigurasi Firebase di aplikasi: `google-services.json`,
-  `firebase_messaging`), belum disertakan.
+- Saat aplikasi terbuka, notifikasi lewat polling. Saat tertutup, push FCM hanya untuk **Android** (lihat 2.5)
+  dan butuh `FIREBASE_CREDENTIALS` di backend. iOS belum: butuh akun Apple Developer berbayar (APNs).
 - Lokasi manual lewat pin peta (FR-2.4); pencarian alamat (geocoding) dan konteks area (FR-3.6/4.4) belum dibuat.
 - Endpoint `/config` dan `/demo/*` hanya butuh login biasa. Batasi aksesnya sebelum dipakai di luar demo.
-- Tile peta memakai server OpenStreetMap publik; untuk produksi gunakan penyedia tile sendiri.
+- Tile peta lewat CDN CARTO (data OpenStreetMap) dengan `CARTO_API_KEY`. Pantau kuota key-nya bila pemakaian membesar.
