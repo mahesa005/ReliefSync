@@ -45,7 +45,14 @@ class Api {
   }
 
   Future<void> setBaseUrl(String url) async {
-    baseUrl = url.trim().replaceAll(RegExp(r'/+$'), '');
+    var trimmed = url.trim().replaceAll(RegExp(r'/+$'), '');
+    // Without a scheme, Uri.parse treats the value as a relative path, so on
+    // Flutter Web every request silently resolves against the current page
+    // origin (e.g. localhost:PORT) instead of the host the user typed.
+    if (!RegExp(r'^https?://').hasMatch(trimmed)) {
+      trimmed = 'https://$trimmed';
+    }
+    baseUrl = trimmed;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefsKey, baseUrl);
   }
