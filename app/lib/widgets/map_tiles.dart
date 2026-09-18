@@ -61,3 +61,19 @@ class MapDot extends StatelessWidget {
 
 /// LatLng from a JSON object with `lat` / `lng` (ints or doubles).
 LatLng pointOf(Map j) => LatLng((j['lat'] as num).toDouble(), (j['lng'] as num).toDouble());
+
+/// Nudges the map camera a few times over ~1s after `onMapReady` fires.
+///
+/// flutter_map only fetches tiles in response to a camera event, and on web
+/// the map's viewport can still be reporting a zero size for several frames
+/// after onMapReady (CanvasKit/layout not settled yet), so a single
+/// `move()` right away can silently compute an empty viewport and never
+/// issue a single tile request. Retrying a few times over the following
+/// second is a cheap way to land on a frame where the size is real.
+void kickTiles(MapController controller, LatLng center, double zoom, {required bool Function() mounted}) {
+  for (final delay in const [Duration.zero, Duration(milliseconds: 150), Duration(milliseconds: 400), Duration(milliseconds: 900)]) {
+    Future.delayed(delay, () {
+      if (mounted()) controller.move(center, zoom);
+    });
+  }
+}

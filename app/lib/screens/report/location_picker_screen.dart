@@ -31,12 +31,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             initialZoom: 17,
             onPositionChanged: (camera, _) => _center = camera.center,
             // Force the first tile fetch -- on web, tiles otherwise sit blank
-            // until the first camera event (flutter_map known issue). Deferred
-            // a frame because on web the viewport can still be zero-sized
-            // when onMapReady fires, which makes an immediate move() a no-op.
-            onMapReady: () => WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _map.move(_center, 17);
-            }),
+            // until the first camera event (flutter_map known issue).
+            onMapReady: () => kickTiles(_map, _center, 17, mounted: () => mounted),
           ),
           children: [osmTiles],
         ),

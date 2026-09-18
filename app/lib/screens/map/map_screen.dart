@@ -80,12 +80,8 @@ class _MapScreenState extends State<MapScreen> {
             initialCenter: center,
             initialZoom: 15,
             // Force the first tile fetch -- on web, tiles otherwise sit blank
-            // until the first camera event (flutter_map known issue). Deferred
-            // a frame because on web the viewport can still be zero-sized
-            // when onMapReady fires, which makes an immediate move() a no-op.
-            onMapReady: () => WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _map.move(center, 15);
-            }),
+            // until the first camera event (flutter_map known issue).
+            onMapReady: () => kickTiles(_map, center, 15, mounted: () => mounted),
           ),
           children: [
             osmTiles,
