@@ -19,7 +19,7 @@ Laporan -> Ekstraksi AI -> Konfirmasi pelapor -> Kebutuhan -> Hard filter -> Pri
 | Backend | Python FastAPI + SQLAlchemy | `backend/` |
 | Database | Supabase Postgres (atau SQLite lokal tanpa setup) | `backend/supabase/schema.sql` |
 | Notifikasi | Inbox in-app (polling 3 dtk) + FCM opsional | `backend/app/services/notify.py` |
-| AI | Groq (`llama-3.3-70b-versatile`, batas 5 dtk) + fallback berbasis aturan | `backend/app/services/extraction.py` |
+| AI | Groq (`llama-3.3-70b-versatile`, batas 5 dtk): judul, deskripsi, skill+kuota dari katalog 12 skill (`skills` table) | `backend/app/services/extraction.py` |
 
 ---
 
@@ -128,7 +128,7 @@ Dokumen konteks menyisakan beberapa hal terbuka. Implementasi memilih nilai defa
 | #2 Mekanisme kuorum (4.13 vs 5.11) | Default `quorum_mode = "proportional"` (tabel T(N) Section 4.13), dihitung atas partisipan **aktif** (non-AFK) sesuai 5.11, minimal 2 sumber berbeda (FR-7.2). Mode `"simple"` (3 orang / 50%) tersedia. |
 | #14 Ukuran batch (FR-5.5 vs 4.10) | Section 4.10: Batch 1 = Required Need, Batch 2 = sisa kebutuhan, Batch 3+ = sisa × 2^k. Semua kandidat lain langsung mendapat notifikasi standar dan bisa menerima proaktif (FR-5.7/5.8). |
 | FR-5.11 vs 4.11 (peran) | Aturan 4.11: menerima ≤5 mnt sejak alarm sendiri → Utama; setelah 5 mnt / pernah menolak → Tambahan. Penerima pertama = "relawan ke-1". Semua penerima aktif mengisi kuota. |
-| #3 Kuota per kebutuhan | Pemadaman api 3, evakuasi 3, P3K 2, logistik 2, akses 2, psikososial 1 (`need_catalog`). |
+| #3 Kuota per kebutuhan | Pemadaman api 3, evakuasi 3, P3K 2, logistik 2, akses 2, psikososial 1 (dari katalog `skills` table). |
 | #4 Data instansi | Daftar kurasi: Jakarta Siaga 112 (khusus DKI), Damkar 113, 112 nasional, Ambulans 119, Basarnas 115, Polisi 110. |
 | #5 Akses kontak instansi | Pelapor (sejak mengisi laporan) dan relawan yang terlibat, kapan saja. |
 | #8 / #9 Ambang skor / top-X | Ambang 0 (hanya hard filter), maksimal 50 kandidat. |
@@ -152,10 +152,10 @@ backend/
     api/                 # auth, me, reports, volunteer, admin/demo
     services/
       matching.py        # Section 4: hard filter, priority score, fairness, tie-break, ukuran batch
-      dispatch.py        # batch alarm, eskalasi, terima/tolak, Utama vs Tambahan
+      dispatch.py        # batch alarm, eskalasi, terima/tolak, Utama vs Tambahan, cross-skill credit
       confirmation.py    # konfirmasi selesai bersama, AFK, 24 jam, update pengalaman
-      extraction.py      # Groq + fallback aturan, bukti wajib dari teks asli
-      needs.py           # pemetaan kebutuhan berbasis aturan
+      extraction.py      # Groq: judul/deskripsi/skill+kuota dari katalog skills, fallback manual
+      skills.py          # katalog 12 skill relawan (seed + baca)
       trust.py, agencies.py, notify.py, simulation.py, storage.py, geo.py
   tests/
   supabase/schema.sql
