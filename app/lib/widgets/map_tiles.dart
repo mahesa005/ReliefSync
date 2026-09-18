@@ -4,12 +4,16 @@ import 'package:latlong2/latlong.dart';
 
 import '../theme.dart';
 
-/// OpenStreetMap tiles (no API key needed). Please respect the OSM tile usage
-/// policy; for production switch to a paid/self-hosted tile provider.
+/// OpenStreetMap data served via CARTO's free basemap CDN (no API key
+/// needed). The OSM Foundation's own tile.openstreetmap.org is meant for
+/// light/testing use only and throttles app-scale traffic, which showed up
+/// as intermittently blank tiles; CARTO's CDN is built for exactly this.
+/// https://github.com/CartoDB/basemap-styles
 final osmTiles = TileLayer(
-  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  subdomains: const ['a', 'b', 'c', 'd'],
   userAgentPackageName: 'id.steicon.reliefsync',
-  maxZoom: 19,
+  maxZoom: 20,
 );
 
 class OsmAttribution extends StatelessWidget {
@@ -20,7 +24,7 @@ class OsmAttribution extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(color: Colors.white70, borderRadius: BorderRadius.circular(6)),
-      child: const Text('© OpenStreetMap', style: TextStyle(fontSize: 11, color: AppColors.inkMuted)),
+      child: const Text('© OpenStreetMap · © CARTO', style: TextStyle(fontSize: 11, color: AppColors.inkMuted)),
     );
   }
 }
