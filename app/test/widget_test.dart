@@ -4,6 +4,7 @@ import 'package:reliefsync/screens/report/extraction_confirm_screen.dart';
 import 'package:reliefsync/services/api.dart';
 import 'package:reliefsync/theme.dart';
 import 'package:reliefsync/widgets/common.dart';
+import 'package:reliefsync/widgets/incident_icon.dart';
 import 'package:reliefsync/widgets/skill_picker.dart';
 
 void main() {
@@ -15,6 +16,13 @@ void main() {
     expect(km(0.35), '350 m');
     expect(km(2.44), '2.4 km');
     expect(timeAgo(DateTime.now().toUtc().subtract(const Duration(minutes: 5)).toIso8601String()), '5 menit lalu');
+  });
+
+  test('every backend incident type has its own icon', () {
+    const codes = ['kebakaran', 'banjir', 'longsor', 'bangunan_roboh', 'kecelakaan', 'akses_terputus'];
+    expect({for (final c in codes) incidentIcon(c)}.length, codes.length);
+    expect(incidentIcon('lainnya'), Icons.emergency_rounded);
+    expect(incidentIcon(null), Icons.emergency_rounded); // older payloads without the field
   });
 
   testWidgets('trust badge shows tier label, never a number', (tester) async {

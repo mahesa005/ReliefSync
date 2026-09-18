@@ -418,6 +418,13 @@ def test_reporter_picks_and_corrects_incident_type(client, db):
     assert r.status_code == 200, r.text
     assert r.json()["incident_label"] == "Tanah longsor"
 
+    # The app picks map/list icons from incident_type, so every list must carry it.
+    assert [m["incident_type"] for m in client.get("/reports/active", headers=h).json()] == ["longsor"]
+    assert [m["incident_type"] for m in client.get("/reports/mine", headers=h).json()] == ["longsor"]
+    other, _ = signup(client, db, "081200000033")
+    nearby = client.get("/reports/nearby", headers=other).json()
+    assert {m["incident_type"] for m in nearby["notified"] + nearby["general"]} <= {"longsor"}
+
 
 def test_seed_syncs_agency_incident_types(db):
     from app.db.models import Agency

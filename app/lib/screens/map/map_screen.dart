@@ -9,6 +9,7 @@ import '../../services/api.dart';
 import '../../services/location.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/incident_icon.dart';
 import '../../widgets/map_tiles.dart';
 import '../../widgets/report_peek_sheet.dart';
 
@@ -116,7 +117,7 @@ class _MapScreenState extends State<MapScreen> {
                   child: GestureDetector(
                     onTap: () => showReportPeek(r['id'] as String),
                     child: MapDot(
-                      icon: Icons.local_fire_department_rounded,
+                      icon: incidentIcon(r['incident_type'] as String?),
                       color: r['is_mine'] == true || r['is_reporter'] == true ? AppColors.primaryDark : AppColors.primary,
                       size: 46,
                       highlight: r['id'] == widget.trackReportId,
@@ -131,7 +132,7 @@ class _MapScreenState extends State<MapScreen> {
           left: 16,
           top: 12,
           child: Pill('${_reports.length} kejadian aktif', color: AppColors.ink, background: Colors.white,
-              icon: Icons.local_fire_department_rounded),
+              icon: Icons.emergency_rounded),
         ),
       ]),
       floatingActionButton: FloatingActionButton(

@@ -8,6 +8,7 @@ import '../../services/api.dart';
 import '../../theme.dart';
 import '../../widgets/agency_sheet.dart';
 import '../../widgets/common.dart';
+import '../../widgets/incident_icon.dart';
 import '../../widgets/map_tiles.dart';
 import '../map/map_screen.dart';
 
@@ -380,7 +381,7 @@ class _LiveMapState extends State<_LiveMap> {
                   point: site,
                   width: 42,
                   height: 42,
-                  child: const MapDot(icon: Icons.local_fire_department_rounded, color: AppColors.primary),
+                  child: MapDot(icon: incidentIcon(report['incident_type'] as String?), color: AppColors.primary),
                 ),
               ]),
             ],

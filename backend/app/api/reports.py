@@ -334,7 +334,8 @@ def my_reports(user: User = Depends(current_user), db: Session = Depends(get_db)
     reports = db.scalars(select(Report).where(Report.reporter_id == user.id, Report.status != "draft")
                          .order_by(Report.received_at.desc()).limit(50)).all()
     return [{
-        "id": r.id, "status": r.status, "incident_label": dispatch.incident_label(r),
+        "id": r.id, "status": r.status, "incident_type": r.incident_type,
+        "incident_label": dispatch.incident_label(r),
         "address_text": r.address_text, "received_at": iso(r.received_at), "raw_text": r.raw_text[:140],
         "needs_total": sum(n.quota for n in r.needs),
         "accepted_total": sum(dispatch.accepted_count(db, n.id) for n in r.needs),
@@ -345,6 +346,7 @@ def my_reports(user: User = Depends(current_user), db: Session = Depends(get_db)
 def _marker(db: Session, r: Report, viewer: User, cfg: Cfg) -> dict:
     return {
         "id": r.id, "lat": r.lat, "lng": r.lng, "status": r.status,
+        "incident_type": r.incident_type,
         "incident_label": dispatch.incident_label(r), "raw_text": r.raw_text[:280],
         "address_text": r.address_text, "received_at": iso(r.received_at),
         "distance_km": round(haversine_km(viewer.lat, viewer.lng, r.lat, r.lng), 2) if viewer.lat is not None else None,
