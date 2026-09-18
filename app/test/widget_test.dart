@@ -1,30 +1,44 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:app/main.dart';
+import 'package:reliefsync/services/api.dart';
+import 'package:reliefsync/theme.dart';
+import 'package:reliefsync/widgets/common.dart';
+import 'package:reliefsync/widgets/skill_picker.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('theme uses Nunito Sans', () {
+    expect(buildTheme().textTheme.bodyMedium?.fontFamily, kFontFamily);
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('distance and time formatting', () {
+    expect(km(0.35), '350 m');
+    expect(km(2.44), '2.4 km');
+    expect(timeAgo(DateTime.now().toUtc().subtract(const Duration(minutes: 5)).toIso8601String()), '5 menit lalu');
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('trust badge shows tier label, never a number', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: buildTheme(),
+      home: const Scaffold(body: TrustBadge({'tier': 'baik', 'label': 'Riwayat baik'})),
+    ));
+    expect(find.text('Riwayat baik'), findsOneWidget);
+  });
+
+  testWidgets('skill picker adds and removes chips', (tester) async {
+    var skills = <Json>[];
+    await tester.pumpWidget(MaterialApp(
+      theme: buildTheme(),
+      home: Scaffold(
+        body: StatefulBuilder(
+          builder: (context, setState) => SingleChildScrollView(
+            child: SkillPicker(skills: skills, onChanged: (v) => setState(() => skills = v)),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('Evakuasi'));
     await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(skills.single['skill'], 'Evakuasi');
+    expect(skills.single['evidence'], 'self_declared');
   });
 }

@@ -1,0 +1,14 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0
+psycopg[binary]>=3.2      # Postgres driver (Supabase); not needed for local SQLite
+pydantic>=2.7
+pydantic-settings>=2.3
+python-multipart>=0.0.9
+pyjwt>=2.8
+httpx>=0.27
+anthropic>=1.0            # AI extraction (optional at runtime: rule-based fallback without a key)
+# firebase-admin>=6.5     # optional: uncomment to send real FCM pushes (see README)
+
+# --- dev / test ---
+pytest>=8.0
