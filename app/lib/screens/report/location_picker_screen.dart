@@ -32,7 +32,7 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
             onPositionChanged: (camera, _) => _center = camera.center,
             // Force the first tile fetch -- on web, tiles otherwise sit blank
             // until the first camera event (flutter_map known issue).
-            onMapReady: () => kickTiles(_map, _center, 17, mounted: () => mounted),
+            onMapReady: () => kickTiles(_map, mounted: () => mounted),
           ),
           children: [osmTiles],
         ),

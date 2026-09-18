@@ -77,12 +77,18 @@ LatLng pointOf(Map j) => LatLng((j['lat'] as num).toDouble(), (j['lng'] as num).
 /// `move()` right away can silently compute an empty viewport and never
 /// issue a single tile request. Retrying a few times over the following
 /// second is a cheap way to land on a frame where the size is real.
-void kickTiles(MapController controller, LatLng center, double zoom, {required bool Function() mounted}) {
+///
+/// Each retry moves to wherever the camera *currently* is (not a captured
+/// target), so it's a no-op once the viewport is real -- and, crucially,
+/// it can never stomp on a user drag/zoom that happens in that first
+/// second (e.g. on the location picker, snapping back to the initial
+/// position mid-drag would silently discard the spot they just picked).
+void kickTiles(MapController controller, {required bool Function() mounted}) {
   for (final delay in const [Duration.zero, Duration(milliseconds: 150), Duration(milliseconds: 400), Duration(milliseconds: 900)]) {
     Future.delayed(delay, () {
       if (!mounted()) return;
       try {
-        controller.move(center, zoom);
+        controller.move(controller.camera.center, controller.camera.zoom);
       } catch (_) {
         // A late timer can outlive the app instance (e.g. a Flutter Web hot
         // restart tears down the engine view while this is still pending) --

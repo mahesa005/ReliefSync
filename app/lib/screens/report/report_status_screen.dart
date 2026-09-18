@@ -361,7 +361,7 @@ class _LiveMapState extends State<_LiveMap> {
               onTap: (_, _) => onTap(),
               // Force the first tile fetch -- on web, tiles otherwise sit
               // blank until the first camera event (flutter_map known issue).
-              onMapReady: () => kickTiles(_map, site, 14.5, mounted: () => mounted),
+              onMapReady: () => kickTiles(_map, mounted: () => mounted),
             ),
             children: [
               osmTiles,

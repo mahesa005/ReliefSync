@@ -81,7 +81,7 @@ class _MapScreenState extends State<MapScreen> {
             initialZoom: 15,
             // Force the first tile fetch -- on web, tiles otherwise sit blank
             // until the first camera event (flutter_map known issue).
-            onMapReady: () => kickTiles(_map, center, 15, mounted: () => mounted),
+            onMapReady: () => kickTiles(_map, mounted: () => mounted),
           ),
           children: [
             osmTiles,

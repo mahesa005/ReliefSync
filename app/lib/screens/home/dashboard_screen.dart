@@ -369,7 +369,7 @@ class _MapPreviewState extends State<_MapPreview> {
               onTap: (_, _) => open(),
               // Force the first tile fetch -- on web, tiles otherwise sit
               // blank until the first camera event (flutter_map known issue).
-              onMapReady: () => kickTiles(_controller, center, 13.5, mounted: () => mounted),
+              onMapReady: () => kickTiles(_controller, mounted: () => mounted),
             ),
             children: [
               osmTiles,
