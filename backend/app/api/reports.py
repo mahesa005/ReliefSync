@@ -3,7 +3,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,19 @@ class StructuredIn(BaseModel):
 
     title: str = ""
     description: str = Field(default="", max_length=4000)
+    # The reporter picked it explicitly; when absent it's classified from the text.
+    incident_type: str | None = None
+
+    @field_validator("incident_type")
+    @classmethod
+    def _known_incident_type(cls, v: str | None) -> str | None:
+        return _check_incident_type(v)
+
+
+def _check_incident_type(v: str | None) -> str | None:
+    if v is not None and v not in extraction.INCIDENT_TYPES:
+        raise ValueError(f"Jenis kejadian tidak dikenal: {v}")
+    return v
 
 
 class ReportIn(BaseModel):
@@ -68,6 +81,11 @@ class ConfirmIn(BaseModel):
     fields: dict[str, str] = {}
     needs: list[NeedIn]
     incident_type: str | None = None
+
+    @field_validator("incident_type")
+    @classmethod
+    def _known_incident_type(cls, v: str | None) -> str | None:
+        return _check_incident_type(v)
 
 
 class VoteIn(BaseModel):
@@ -236,7 +254,7 @@ async def create_report(body: ReportIn, user: User = Depends(current_user), db: 
                             "confidence": 1.0 if s.description.strip() else 0.0},
         }
         source, elapsed, note = "form", 0, "Diisi langsung lewat formulir."
-        incident_type = extraction._incident_type_from(s.description or s.title)
+        incident_type = s.incident_type or extraction._incident_type_from(s.description or s.title)
         proposed_needs = []
     else:
         available_skills = skills_service.list_skills(db)
@@ -262,11 +280,17 @@ async def create_report(body: ReportIn, user: User = Depends(current_user), db: 
         "report": report_view(db, report, user),
         "proposed_needs": proposed_needs,
         "catalog": catalog_payload(db),
+        "incident_types": incident_types_payload(),
     }
 
 
 def catalog_payload(db: Session) -> list[dict]:
     return [{"skill_id": s.id, "name": s.name} for s in skills_service.list_skills(db)]
+
+
+def incident_types_payload() -> list[dict]:
+    return [{"code": code, "label": label, "description": desc}
+            for code, (label, desc) in extraction.INCIDENT_TYPES.items()]
 
 
 @router.post("/reports/{report_id}/confirm")
@@ -491,3 +515,9 @@ def needs_catalog(user: User = Depends(current_user), db: Session = Depends(get_
 def skills_catalog(db: Session = Depends(get_db)):
     """Public: sign-up (before any token exists) picks volunteer skills from it."""
     return catalog_payload(db)
+
+
+@router.get("/incident-types")
+def incident_types():
+    """Incident types the report form and the confirm screen offer."""
+    return incident_types_payload()

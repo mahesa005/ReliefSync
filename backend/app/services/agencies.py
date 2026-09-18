@@ -21,19 +21,31 @@ SEED_AGENCIES = [
     ("Ambulans Gawat Darurat", "119", "Layanan ambulans & gawat darurat medis (SPGDT).",
      [], "nasional", 4),
     ("Basarnas", "115", "Badan SAR Nasional: pencarian dan pertolongan.",
-     ["kebakaran", "banjir", "longsor", "gempa"], "nasional", 5),
+     ["kebakaran", "banjir", "longsor", "bangunan_roboh", "kecelakaan", "akses_terputus"], "nasional", 5),
     ("Polisi", "110", "Pengamanan lokasi dan pengaturan lalu lintas.",
      [], "nasional", 6),
 ]
 
 
 def seed_agencies(db: Session) -> None:
-    if db.scalar(select(Agency).limit(1)) is not None:
+    existing = db.scalars(select(Agency)).all()
+    if not existing:
+        for name, phone, desc, types, region, rank in SEED_AGENCIES:
+            db.add(Agency(name=name, phone=phone, description=desc, incident_types=types, region=region,
+                          urgency_rank=rank))
+        db.commit()
         return
-    for name, phone, desc, types, region, rank in SEED_AGENCIES:
-        db.add(Agency(name=name, phone=phone, description=desc, incident_types=types, region=region,
-                      urgency_rank=rank))
-    db.commit()
+    # Keep the seeded agencies' incident types in step with the incident type
+    # list on databases seeded before it changed.
+    seeded_types = {(name, region): types for name, _, _, types, region, _ in SEED_AGENCIES}
+    changed = False
+    for a in existing:
+        types = seeded_types.get((a.name, a.region))
+        if types is not None and a.incident_types != types:
+            a.incident_types = types
+            changed = True
+    if changed:
+        db.commit()
 
 
 def suggest(db: Session, incident_type: str, lat: float | None, lng: float | None) -> dict:

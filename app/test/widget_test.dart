@@ -29,12 +29,14 @@ void main() {
     final data = <String, dynamic>{
       'report': {
         'id': 'r1',
+        'incident_type': 'banjir',
         'raw_text': 'Banjir setinggi dada, ada lansia terjebak.',
         'extraction_source': 'llm',
         'extraction_ms': 900,
         'extraction_note': null,
         'extraction': [
-          {'field': 'title', 'label': 'Judul', 'value': 'Banjir', 'ai_value': 'Banjir', 'evidence': null, 'confidence': 1.0},
+          {'field': 'title', 'label': 'Judul', 'value': 'Banjir di Gang Mawar', 'ai_value': 'Banjir di Gang Mawar',
+           'evidence': null, 'confidence': 1.0},
           {'field': 'description', 'label': 'Deskripsi', 'value': 'Banjir tinggi', 'ai_value': 'Banjir tinggi',
            'evidence': null, 'confidence': 1.0},
         ],
@@ -46,6 +48,11 @@ void main() {
         {'skill_id': 1, 'name': 'P3K'},
         {'skill_id': 12, 'name': 'Berenang'},
       ],
+      'incident_types': [
+        {'code': 'kebakaran', 'label': 'Kebakaran', 'description': '...'},
+        {'code': 'banjir', 'label': 'Banjir', 'description': '...'},
+        {'code': 'lainnya', 'label': 'Darurat komunitas lainnya', 'description': '...'},
+      ],
     };
     tester.view.physicalSize = const Size(1080, 4000);
     tester.view.devicePixelRatio = 1;
@@ -56,6 +63,7 @@ void main() {
     expect(find.text('Berenang'), findsOneWidget);
     expect(find.text('Disarankan AI'), findsOneWidget);
     expect(find.text('3'), findsOneWidget); // AI-proposed quota
+    expect(find.text('Banjir'), findsOneWidget); // incident type preselected from the report
   });
 
   testWidgets('skill picker adds and removes catalog skills by id', (tester) async {

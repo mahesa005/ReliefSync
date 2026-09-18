@@ -96,10 +96,44 @@ def test_llm_success_maps_needs_to_real_skill_ids(monkeypatch, db):
     assert result.incident_type == "kebakaran"
 
 
-def test_incident_type_classified_from_raw_text_regardless_of_ai():
-    assert extraction._incident_type_from("banjir besar merendam kampung") == "banjir"
-    assert extraction._incident_type_from("tidak jelas apa yang terjadi") == "lainnya"  # not assumed to be fire
-    assert extraction._incident_type_from("Penculikan anak di depan sekolah") == "lainnya"
+@pytest.mark.parametrize("ai_type,expected", [
+    ("banjir", "banjir"),                  # AI decides, even against the regex (REPORT says "kebakaran")
+    ("Bangunan_Roboh", "bangunan_roboh"),  # case-insensitive
+    ("gempa", "kebakaran"),                # not a known type -> regex fallback
+    ("", "kebakaran"),
+])
+def test_llm_incident_type_used_when_known(monkeypatch, db, ai_type, expected):
+    skills = list(db.scalars(select(Skill)))
+    monkeypatch.setattr(get_settings(), "groq_api_key", "sk-test")
+
+    async def fake_llm(_text, _skills):
+        return {"title": "T", "description": "D", "incident_type": ai_type, "needs": []}
+
+    monkeypatch.setattr(extraction, "_llm_extract", fake_llm)
+    assert asyncio.run(extraction.extract(REPORT, skills)).incident_type == expected
+
+
+def test_prompt_lists_every_incident_type(db):
+    prompt = extraction._build_system_prompt(list(db.scalars(select(Skill))))
+    for code in extraction.INCIDENT_TYPES:
+        assert f"- {code}:" in prompt
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("banjir besar merendam kampung", "banjir"),
+    ("Banjir bandang di Bandung", "banjir"),
+    ("Rumah warga kebanjiran sejak subuh", "banjir"),
+    ("Banjir, listrik sempat korslet", "banjir"),  # the flood is the incident, not the short circuit
+    ("Tanah longsor menimbun dua rumah", "longsor"),
+    ("Gedung sekolah ambruk, murid tertimpa", "bangunan_roboh"),
+    ("Tabrakan bus dan truk, banyak korban", "kecelakaan"),
+    ("Pohon tumbang menutup jalan, warga terisolasi", "akses_terputus"),
+    ("Kebakaran rumah, lansia terjebak", "kebakaran"),
+    ("tidak jelas apa yang terjadi", "lainnya"),  # not assumed to be fire
+    ("Penculikan anak di depan sekolah", "lainnya"),
+])
+def test_incident_type_regex_fallback(text, expected):
+    assert extraction._incident_type_from(text) == expected
 
 
 def test_incident_type_matches_whole_words_only():

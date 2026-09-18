@@ -1,12 +1,11 @@
-"""AI extraction of a free-text report: title, description, and required
-skills+quota, matched against the Skill catalog (design doc Part 1).
+"""AI extraction of a free-text report: title, description, incident type and
+required skills+quota, matched against the Skill catalog (design doc Part 1).
 
 Reliability rules:
   * hard timeout (default 5 s); on timeout / error / refusal / no API key the
     fallback below runs instead, so submission is never blocked;
-  * incident_type classification is a separate, always-on regex step, run
-    against the raw report text regardless of whether the AI call succeeds --
-    it was not one of the four requested extraction fields.
+  * the incident type comes from the AI when it returns a known one, and from
+    a keyword regex over the raw report text otherwise.
 """
 import asyncio
 import json
@@ -45,6 +44,9 @@ class NeedOut(BaseModel):
 class ExtractionResult(BaseModel):
     title: str
     description: str
+    # Plain str, not a Literal: an unexpected value should fall back to the
+    # regex classification, not throw away the whole extraction.
+    incident_type: str = ""
     needs: list[NeedOut]
 
 
@@ -60,19 +62,36 @@ class Extraction:
 
 
 # ---------------------------------------------------------------------------
-# Incident-type classification -- always regex-based, independent of the LLM.
+# Incident types. The label is what the app shows; the description is what the
+# AI is told each type covers.
 # ---------------------------------------------------------------------------
-# Whole words only: a bare "api" also matches "tapi", "sapi", "rapi"..., and
-# since fire is checked first, a flood report saying "tapi" became a fire.
-_INCIDENT_PATTERNS = [
-    ("kebakaran", r"\b(kebakaran|terbakar|api|asap|korslet|korsleting|hangus|menyala|meledak)\b"),
-    ("banjir", r"\b(banjir|genangan|air naik|terendam)\b"),
-    ("longsor", r"\blongsor\b"),
-    ("gempa", r"\bgempa\b"),
-]
-
-
 OTHER_INCIDENT = "lainnya"
+
+INCIDENT_TYPES: dict[str, tuple[str, str]] = {
+    "kebakaran": ("Kebakaran", "Kebakaran permukiman/lahan dekat pemukiman"),
+    "banjir": ("Banjir", "Banjir & banjir bandang"),
+    "longsor": ("Tanah longsor", "Tanah longsor, korban tertimbun"),
+    "bangunan_roboh": ("Bangunan roboh", "Bangunan ambruk, korban tertimbun reruntuhan"),
+    "kecelakaan": ("Kecelakaan", "Kecelakaan transportasi lokal, termasuk dengan banyak korban"),
+    "akses_terputus": ("Akses terputus / terisolasi",
+                       "Pohon tumbang, jalan terputus, warga terjebak/terisolasi -- butuh evakuasi & logistik"),
+    OTHER_INCIDENT: ("Darurat komunitas lainnya",
+                     "Situasi mengancam nyawa yang butuh bantuan cepat warga sekitar (evakuasi/P3K) "
+                     "dan tidak masuk kategori di atas"),
+}
+
+# Fallback when the AI can't classify. Checked in order, first match wins, so
+# the more specific / more likely-primary types come first ("banjir, listrik
+# sempat korslet" is a flood). Whole words only: a bare "api" also matches
+# "tapi", "sapi", "rapi"...
+_INCIDENT_PATTERNS = [
+    ("longsor", r"\b(longsor|tanah ambles|tertimbun tanah)\b"),
+    ("banjir", r"\b(banjir|kebanjiran|genangan|air naik|air bah|terendam)\b"),
+    ("bangunan_roboh", r"\b(roboh|ambruk|runtuh|reruntuhan)\b"),
+    ("kecelakaan", r"\b(kecelakaan|tabrakan|bertabrakan|tertabrak|terguling|terbalik)\b"),
+    ("kebakaran", r"\b(kebakaran|terbakar|api|asap|korslet|korsleting|hangus|meledak|ledakan)\b"),
+    ("akses_terputus", r"\b(pohon tumbang|tumbang|jalan (terputus|putus)|jembatan (terputus|putus)|terisolasi|terisolir)\b"),
+]
 
 
 def _incident_type_from(text: str) -> str:
@@ -80,8 +99,8 @@ def _incident_type_from(text: str) -> str:
     for itype, pattern in _INCIDENT_PATTERNS:
         if re.search(pattern, lowered):
             return itype
-    # Not one of the known disaster types (e.g. "penculikan"): don't pretend
-    # it's a fire -- the report's title is shown as its label instead.
+    # Not one of the specific types (e.g. "penculikan"): don't pretend it's a
+    # fire -- the report's title is shown as its label instead.
     return OTHER_INCIDENT
 
 
@@ -108,8 +127,13 @@ Dari laporan warga, hasilkan:
 - title: judul singkat kejadian (maks 10 kata).
 - description: ringkasan kejadian dalam Bahasa Indonesia (termasuk lokasi dan kondisi akses
   yang disebutkan di teks, jika ada) -- boleh diparafrase, tidak perlu kata-per-kata.
+- incident_type: SATU jenis kejadian utama dari daftar di bawah (tulis kodenya persis).
+  Jika beberapa cocok, pilih yang paling menentukan bantuan yang dibutuhkan.
 - needs: daftar {{skill_id, quota}} -- skill yang benar-benar dibutuhkan berdasarkan teks,
   dan estimasi jumlah relawan per skill.
+
+Jenis kejadian (kode: keterangan):
+{incident_types}
 
 Daftar skill yang tersedia (HANYA pilih dari sini, dengan skill_id persis):
 {catalog}
@@ -122,8 +146,10 @@ Balas HANYA dengan JSON valid (tanpa teks lain, tanpa markdown) sesuai skema ini
 
 def _build_system_prompt(skills: list[Skill]) -> str:
     catalog = "\n".join(f"- skill_id={s.id}: {s.name}" for s in skills)
+    incident_types = "\n".join(f"- {code}: {desc}" for code, (_, desc) in INCIDENT_TYPES.items())
     schema = json.dumps(ExtractionResult.model_json_schema(), ensure_ascii=False)
-    return SYSTEM_PROMPT_TEMPLATE.format(catalog=catalog, domain_rules=DOMAIN_RULES, schema=schema)
+    return SYSTEM_PROMPT_TEMPLATE.format(catalog=catalog, incident_types=incident_types,
+                                         domain_rules=DOMAIN_RULES, schema=schema)
 
 
 async def _llm_extract(text: str, skills: list[Skill]) -> dict:
@@ -179,13 +205,14 @@ async def extract(text: str, skills: list[Skill]) -> Extraction:
     if s.groq_api_key and text.strip():
         try:
             raw = await asyncio.wait_for(_llm_extract(text, skills), timeout=s.llm_timeout_seconds + 0.5)
+            ai_type = (raw.get("incident_type") or "").strip().lower()
             return Extraction(
                 title=raw["title"].strip() or UNKNOWN,
                 description=raw["description"].strip() or text.strip(),
                 needs=_sanitize_needs(raw["needs"], valid_skill_ids),
                 source="llm",
                 elapsed_ms=int((time.perf_counter() - start) * 1000),
-                incident_type=incident_type,
+                incident_type=ai_type if ai_type in INCIDENT_TYPES else incident_type,
             )
         except (TimeoutError, asyncio.TimeoutError):
             note = "AI tidak merespons dalam batas waktu; pilih kebutuhan secara manual."
