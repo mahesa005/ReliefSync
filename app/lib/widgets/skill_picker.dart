@@ -3,110 +3,109 @@ import 'package:flutter/material.dart';
 import '../services/api.dart';
 import '../theme.dart';
 
-/// Skills used by the need catalog (backend `need_catalog`). SkillMatch is an
-/// exact match, so suggested chips use exactly these names.
-const kSuggestedSkills = [
-  'Pemadaman Api',
-  'Evakuasi',
-  'P3K',
-  'Logistik',
-  'Pengaturan Lalu Lintas',
-  'Dukungan Psikososial',
-];
+/// The backend's fixed skill catalog ([{skill_id, name}]), fetched once.
+/// Matching is by skill_id, so volunteers can only pick from this list.
+Future<List<Json>>? _catalogFuture;
 
-/// Skill chips (5.8): tap a suggestion or type one and press + to add; tap a
-/// selected chip to remove it. The shield toggles "bersertifikat" (certified
-/// evidence scores higher than self-declared, context doc 4.2).
+Future<List<Json>> loadSkillCatalog() {
+  final future = _catalogFuture ??= Api.instance.get('/skills').then((v) => (v as List).cast<Json>());
+  // Don't cache a failure (e.g. offline): the next open should retry.
+  future.catchError((_) {
+    _catalogFuture = null;
+    return <Json>[];
+  });
+  return future;
+}
+
+/// Skill chips (5.8): tap a catalog skill to add or remove it. On a selected
+/// skill the shield toggles "bersertifikat" (certified evidence scores higher
+/// than self-declared, context doc 4.2).
 class SkillPicker extends StatefulWidget {
-  const SkillPicker({super.key, required this.skills, required this.onChanged});
-  final List<Json> skills; // [{skill, evidence}]
+  const SkillPicker({super.key, required this.skills, required this.onChanged, this.catalog});
+  final List<Json> skills; // [{skill_id, evidence}]
   final ValueChanged<List<Json>> onChanged;
+
+  /// Injected catalog (tests); fetched from the API when null.
+  final List<Json>? catalog;
 
   @override
   State<SkillPicker> createState() => _SkillPickerState();
 }
 
 class _SkillPickerState extends State<SkillPicker> {
-  final _custom = TextEditingController();
+  late Future<List<Json>> _catalog = _load();
+
+  Future<List<Json>> _load() => widget.catalog != null ? Future.value(widget.catalog) : loadSkillCatalog();
 
   List<Json> get _skills => widget.skills;
-  bool _has(String s) => _skills.any((x) => (x['skill'] as String).toLowerCase() == s.toLowerCase());
+  Json? _selected(int id) => _skills.where((x) => x['skill_id'] == id).firstOrNull;
 
-  void _add(String s) {
-    s = s.trim();
-    if (s.isEmpty || _has(s)) return;
-    widget.onChanged([..._skills, {'skill': s, 'evidence': 'self_declared'}]);
-    _custom.clear();
-  }
+  void _toggle(int id) => widget.onChanged(_selected(id) == null
+      ? [..._skills, {'skill_id': id, 'evidence': 'self_declared'}]
+      : _skills.where((x) => x['skill_id'] != id).toList());
 
-  void _remove(String s) => widget.onChanged(_skills.where((x) => x['skill'] != s).toList());
-
-  void _toggleCertified(Json x) => widget.onChanged([
+  void _toggleCertified(int id) => widget.onChanged([
         for (final y in _skills)
-          if (y == x)
+          if (y['skill_id'] == id)
             {...y, 'evidence': y['evidence'] == 'certified' ? 'self_declared' : 'certified'}
           else
             y,
       ]);
 
   @override
-  void dispose() {
-    _custom.dispose();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Json>>(
+      future: _catalog,
+      builder: (context, snap) {
+        if (snap.connectionState != ConnectionState.done) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final catalog = snap.data ?? const <Json>[];
+        if (catalog.isEmpty) {
+          return Row(children: [
+            const Expanded(
+              child: Text('Daftar kemampuan gagal dimuat.', style: TextStyle(color: AppColors.inkMuted)),
+            ),
+            TextButton(onPressed: () => setState(() => _catalog = _load()), child: const Text('Coba lagi')),
+          ]);
+        }
+        return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final c in catalog) _chip(c['skill_id'] as int, c['name'] as String),
+          ]),
+          const SizedBox(height: 8),
+          const Text('Ketuk kemampuan untuk memilih. Ketuk ikon perisai jika Anda punya sertifikatnya.',
+              style: TextStyle(color: AppColors.inkMuted, fontSize: 12.5)),
+        ]);
+      },
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final suggestions = kSuggestedSkills.where((s) => !_has(s)).toList();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      if (_skills.isEmpty)
-        const Text('Belum ada kemampuan dipilih.', style: TextStyle(color: AppColors.inkMuted))
-      else
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final x in _skills)
-            InputChip(
-              selected: true,
-              showCheckmark: false,
-              selectedColor: AppColors.primarySoft,
-              avatar: GestureDetector(
-                onTap: () => _toggleCertified(x),
-                child: Icon(
-                  x['evidence'] == 'certified' ? Icons.verified_rounded : Icons.shield_outlined,
-                  size: 18,
-                  color: x['evidence'] == 'certified' ? AppColors.success : AppColors.inkMuted,
-                ),
-              ),
-              label: Text(x['skill'] as String),
-              onPressed: () => _toggleCertified(x),
-              onDeleted: () => _remove(x['skill'] as String),
-              deleteIcon: const Icon(Icons.close_rounded, size: 18),
-            ),
-        ]),
-      const SizedBox(height: 6),
-      const Text('Ketuk ikon perisai jika Anda punya sertifikat untuk kemampuan tersebut.',
-          style: TextStyle(color: AppColors.inkMuted, fontSize: 12.5)),
-      const SizedBox(height: 14),
-      if (suggestions.isNotEmpty) ...[
-        const Text('Saran', style: TextStyle(fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final s in suggestions)
-            ActionChip(avatar: const Icon(Icons.add_rounded, size: 18), label: Text(s), onPressed: () => _add(s)),
-        ]),
-        const SizedBox(height: 12),
-      ],
-      Row(children: [
-        Expanded(
-          child: TextField(
-            controller: _custom,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(hintText: 'Kemampuan lain', isDense: true),
-            onSubmitted: _add,
-          ),
+  Widget _chip(int id, String name) {
+    final sel = _selected(id);
+    if (sel == null) {
+      return ActionChip(avatar: const Icon(Icons.add_rounded, size: 18), label: Text(name), onPressed: () => _toggle(id));
+    }
+    final certified = sel['evidence'] == 'certified';
+    return InputChip(
+      selected: true,
+      showCheckmark: false,
+      selectedColor: AppColors.primarySoft,
+      avatar: GestureDetector(
+        onTap: () => _toggleCertified(id),
+        child: Icon(
+          certified ? Icons.verified_rounded : Icons.shield_outlined,
+          size: 18,
+          color: certified ? AppColors.success : AppColors.inkMuted,
         ),
-        const SizedBox(width: 8),
-        IconButton.filled(onPressed: () => _add(_custom.text), icon: const Icon(Icons.add_rounded)),
-      ]),
-    ]);
+      ),
+      label: Text(name),
+      onPressed: () => _toggleCertified(id),
+      onDeleted: () => _toggle(id),
+      deleteIcon: const Icon(Icons.close_rounded, size: 18),
+    );
   }
 }

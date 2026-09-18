@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../services/alerts.dart';
 import '../../services/api.dart';
 import '../../services/location.dart';
+import '../../services/push.dart';
 import '../../services/session.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -46,7 +47,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await context.read<LocationService>().startTracking();
       if (!mounted) return;
-      context.read<AlertCenter>().start();
+      final isVolunteer = context.read<Session>().isVolunteer;
+      context.read<AlertCenter>().start(isVolunteer: isVolunteer);
+      Push.register(isVolunteer: isVolunteer);
       _load();
     });
     _timer = Timer.periodic(const Duration(seconds: 6), (_) => _load());
