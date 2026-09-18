@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..db import get_db
-from ..models import (
+from ..core.security import mask_phone
+from ..db.models import (
     AccuracyFeedback,
     Assignment,
     Need,
@@ -19,7 +19,7 @@ from ..models import (
     VolunteerSkill,
     utcnow,
 )
-from ..security import mask_phone
+from ..db.session import get_db
 from ..services.trust import trust_payload
 from .deps import current_user, iso
 

@@ -12,6 +12,7 @@ Reliability rules:
     field is reset to "belum diketahui" (FR-3.3: nothing is made up).
 """
 import asyncio
+import json
 import logging
 import re
 import time
@@ -19,7 +20,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
-from ..config import get_settings
+from ..core.config import get_settings
 
 log = logging.getLogger("reliefsync.extraction")
 
@@ -169,29 +170,48 @@ def _incident_type_from(value: str) -> str:
     return "kebakaran"
 
 
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+
 async def _llm_extract(text: str) -> dict[str, dict]:
-    import anthropic  # imported lazily so the app runs without the SDK configured
+    import httpx  # already a project dependency
 
     s = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=s.anthropic_api_key, timeout=s.llm_timeout_seconds, max_retries=0)
-    response = await client.messages.parse(
-        model=s.llm_model,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        output_config={"effort": "low"},  # short extraction task: keep latency low (NFR-1)
-        messages=[{"role": "user", "content": f"<laporan>\n{text}\n</laporan>"}],
-        output_format=ExtractionResult,
+    schema_prompt = (
+        SYSTEM_PROMPT
+        + "\n\nBalas HANYA dengan JSON valid (tanpa teks lain, tanpa markdown) sesuai skema ini:\n"
+        + json.dumps(ExtractionResult.model_json_schema(), ensure_ascii=False)
     )
-    if response.stop_reason == "refusal" or response.parsed_output is None:
-        raise RuntimeError(f"LLM returned no usable output (stop_reason={response.stop_reason})")
-    return response.parsed_output.model_dump()
+    async with httpx.AsyncClient(timeout=s.llm_timeout_seconds) as client:
+        resp = await client.post(
+            GROQ_API_URL,
+            headers={"Authorization": f"Bearer {s.groq_api_key}"},
+            json={
+                "model": s.llm_model,
+                "temperature": 0,
+                "max_tokens": 1024,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": schema_prompt},
+                    {"role": "user", "content": f"<laporan>\n{text}\n</laporan>"},
+                ],
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    choice = data["choices"][0]
+    if choice.get("finish_reason") == "content_filter":
+        raise RuntimeError("LLM refused the request (content_filter)")
+    content = choice["message"]["content"]
+    return ExtractionResult.model_validate_json(content).model_dump()
 
 
 async def extract(text: str) -> Extraction:
     start = time.perf_counter()
     s = get_settings()
     note = None
-    if s.anthropic_api_key and text.strip():
+    if s.groq_api_key and text.strip():
         try:
             raw = await asyncio.wait_for(_llm_extract(text), timeout=s.llm_timeout_seconds + 0.5)
             fields = enforce_evidence(raw, text)
@@ -207,7 +227,7 @@ async def extract(text: str) -> Extraction:
         except Exception as exc:  # noqa: BLE001 -- any AI failure must fall back (NFR-10)
             note = "AI tidak tersedia; memakai ekstraksi berbasis aturan."
             log.warning("LLM extraction failed (%s); using rule-based fallback", exc)
-    elif not s.anthropic_api_key:
+    elif not s.groq_api_key:
         note = "Ekstraksi berbasis aturan (AI tidak dikonfigurasi)."
 
     try:

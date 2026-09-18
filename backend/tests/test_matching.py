@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from app.app_config import DEFAULTS
+from app.core.app_config import DEFAULTS
 from app.services.geo import offset_point
 from app.services.matching import (
     VolunteerInput,

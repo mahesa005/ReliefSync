@@ -21,8 +21,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..app_config import Cfg
-from ..models import Assignment, Need, Offer, Participant, Report, User, VolunteerProfile, utcnow
+from ..core.app_config import Cfg
+from ..db.models import Assignment, Need, Offer, Participant, Report, User, VolunteerProfile, utcnow
 from .dispatch import DispatchError, incident_label
 from .notify import notify
 

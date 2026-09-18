@@ -7,10 +7,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import get_settings
-from ..db import get_db
-from ..models import User, VolunteerProfile, VolunteerSkill, utcnow
-from ..security import create_token, generate_otp, hash_password, normalize_phone, verify_password
+from ..core.config import get_settings
+from ..core.security import create_token, generate_otp, hash_password, normalize_phone, verify_password
+from ..db.models import User, VolunteerProfile, VolunteerSkill, utcnow
+from ..db.session import get_db
 from .me import SkillIn, user_payload
 
 router = APIRouter(prefix="/auth", tags=["auth"])

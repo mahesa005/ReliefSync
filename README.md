@@ -19,7 +19,7 @@ Laporan -> Ekstraksi AI -> Konfirmasi pelapor -> Kebutuhan -> Hard filter -> Pri
 | Backend | Python FastAPI + SQLAlchemy | `backend/` |
 | Database | Supabase Postgres (atau SQLite lokal tanpa setup) | `backend/supabase/schema.sql` |
 | Notifikasi | Inbox in-app (polling 3 dtk) + FCM opsional | `backend/app/services/notify.py` |
-| AI | Claude (`claude-opus-5`, batas 5 dtk) + fallback berbasis aturan | `backend/app/services/extraction.py` |
+| AI | Groq (`llama-3.3-70b-versatile`, batas 5 dtk) + fallback berbasis aturan | `backend/app/services/extraction.py` |
 
 ---
 
@@ -54,8 +54,8 @@ mengonfirmasi "sudah teratasi", sehingga seluruh alur terlihat hidup dari satu H
 | Variabel | Fungsi |
 |---|---|
 | `DATABASE_URL` | Kosong = SQLite. Untuk Supabase: `postgresql+psycopg://postgres.<ref>:<password>@<host>:5432/postgres` (Project Settings → Database). Tabel dibuat otomatis saat start, RLS diaktifkan. `supabase/schema.sql` tersedia untuk ditinjau / dijalankan manual. |
-| `ANTHROPIC_API_KEY` | Mengaktifkan ekstraksi AI dengan Claude. Tanpa kunci → fallback berbasis aturan. |
-| `LLM_MODEL`, `LLM_TIMEOUT_SECONDS` | Default `claude-opus-5`, 5 detik (NFR-1). Lewat batas waktu → fallback otomatis. |
+| `GROQ_API_KEY` | Mengaktifkan ekstraksi AI dengan Groq. Tanpa kunci → fallback berbasis aturan. |
+| `LLM_MODEL`, `LLM_TIMEOUT_SECONDS` | Default `llama-3.3-70b-versatile`, 5 detik (NFR-1). Lewat batas waktu → fallback otomatis. |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET` | Simpan foto laporan di Supabase Storage (bucket publik). Kosong → folder `backend/uploads/`. |
 | `FIREBASE_CREDENTIALS` | Path service-account Firebase + `pip install firebase-admin` untuk push FCM sungguhan (kanal `relief_alarm` vs `relief_standard`). |
 | `SIMULATE_OTP` | `true` (default): kode OTP dikembalikan API dan ditampilkan di aplikasi. |
@@ -142,14 +142,19 @@ Dokumen konteks menyisakan beberapa hal terbuka. Implementasi memilih nilai defa
 backend/
   app/
     main.py              # FastAPI + loop engine (tick tiap 2 dtk)
-    models.py            # skema database (sumber tunggal SQLite & Supabase)
-    app_config.py        # semua parameter desain
+    core/
+      config.py          # env settings (DATABASE_URL, GROQ_API_KEY, ...)
+      security.py        # JWT, OTP, hashing, phone masking
+      app_config.py      # semua parameter desain (tersimpan di tabel app_config)
+    db/
+      session.py         # engine & session SQLAlchemy (SQLite / Supabase Postgres)
+      models.py          # skema database (sumber tunggal SQLite & Supabase)
     api/                 # auth, me, reports, volunteer, admin/demo
     services/
       matching.py        # Section 4: hard filter, priority score, fairness, tie-break, ukuran batch
       dispatch.py        # batch alarm, eskalasi, terima/tolak, Utama vs Tambahan
       confirmation.py    # konfirmasi selesai bersama, AFK, 24 jam, update pengalaman
-      extraction.py      # Claude + fallback aturan, bukti wajib dari teks asli
+      extraction.py      # Groq + fallback aturan, bukti wajib dari teks asli
       needs.py           # pemetaan kebutuhan berbasis aturan
       trust.py, agencies.py, notify.py, simulation.py, storage.py, geo.py
   tests/

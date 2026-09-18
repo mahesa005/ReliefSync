@@ -6,10 +6,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..app_config import Cfg
-from ..db import get_db
-from ..models import Assignment, Need, Offer, Participant, Report, User, utcnow
-from ..security import mask_phone
+from ..core.app_config import Cfg
+from ..core.security import mask_phone
+from ..db.models import Assignment, Need, Offer, Participant, Report, User, utcnow
+from ..db.session import get_db
 from ..services import agencies, confirmation, dispatch
 from ..services.geo import haversine_km
 from ..services.trust import trust_payload

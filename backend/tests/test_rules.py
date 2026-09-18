@@ -3,8 +3,8 @@ import asyncio
 
 import pytest
 
-from app.app_config import DEFAULTS
-from app.config import get_settings
+from app.core.app_config import DEFAULTS
+from app.core.config import get_settings
 from app.services import extraction
 from app.services.confirmation import threshold_proportional, threshold_simple
 from app.services.needs import map_needs
@@ -68,7 +68,7 @@ def test_no_api_key_uses_rules():
 
 def test_llm_timeout_falls_back(monkeypatch):
     settings = get_settings()
-    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test")
+    monkeypatch.setattr(settings, "groq_api_key", "sk-test")
     monkeypatch.setattr(settings, "llm_timeout_seconds", 0.2)
 
     async def slow(_text):
@@ -83,7 +83,7 @@ def test_llm_timeout_falls_back(monkeypatch):
 
 def test_llm_error_falls_back(monkeypatch):
     settings = get_settings()
-    monkeypatch.setattr(settings, "anthropic_api_key", "sk-test")
+    monkeypatch.setattr(settings, "groq_api_key", "sk-test")
 
     async def boom(_text):
         raise RuntimeError("503")
@@ -95,5 +95,5 @@ def test_llm_error_falls_back(monkeypatch):
 
 @pytest.mark.parametrize("phone,masked", [("081234567890", "0812****7890"), ("0812345678", "0812**5678")])
 def test_mask_phone(phone, masked):
-    from app.security import mask_phone
+    from app.core.security import mask_phone
     assert mask_phone(phone) == masked

@@ -7,7 +7,7 @@ read back from it at runtime, so the team can tune them without a code change
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import AppConfig
+from ..db.models import AppConfig
 
 DEFAULTS: dict[str, object] = {
     # --- Matching (4.2 - 4.9) ---------------------------------------------

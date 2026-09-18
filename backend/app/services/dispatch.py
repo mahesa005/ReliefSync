@@ -25,8 +25,8 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from ..app_config import Cfg
-from ..models import (
+from ..core.app_config import Cfg
+from ..db.models import (
     Assignment,
     NearbyNotice,
     Need,

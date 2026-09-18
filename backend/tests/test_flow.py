@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from sqlalchemy import select
 
-from app.models import (
+from app.db.models import (
     Assignment,
     Need,
     Notification,
@@ -262,7 +262,7 @@ def test_sighting_and_nearby_widget(client, db):
 
 
 def test_trust_tier_from_accuracy(db):
-    from app.models import AccuracyFeedback
+    from app.db.models import AccuracyFeedback
     from app.services.trust import trust_tier
     u = User(name="R", phone="081299999999", password_hash="!")
     db.add(u)

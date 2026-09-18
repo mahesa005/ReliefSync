@@ -16,8 +16,9 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..app_config import Cfg
-from ..models import (
+from ..core.app_config import Cfg
+from ..core.security import hash_password
+from ..db.models import (
     AccuracyFeedback,
     Assignment,
     Offer,
@@ -28,7 +29,6 @@ from ..models import (
     VolunteerSkill,
     utcnow,
 )
-from ..security import hash_password
 from . import confirmation, dispatch
 from .geo import move_towards, offset_point
 

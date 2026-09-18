@@ -7,9 +7,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..app_config import Cfg
-from ..db import get_db
-from ..models import (
+from ..core.app_config import Cfg
+from ..core.security import mask_phone, normalize_phone
+from ..db.models import (
     AccuracyFeedback,
     Assignment,
     NearbyNotice,
@@ -22,7 +22,7 @@ from ..models import (
     User,
     utcnow,
 )
-from ..security import mask_phone, normalize_phone
+from ..db.session import get_db
 from ..services import agencies, confirmation, dispatch, extraction, storage
 from ..services.geo import haversine_km
 from ..services.needs import map_needs
