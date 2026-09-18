@@ -37,7 +37,7 @@ from ..db.models import (
     VolunteerProfile,
     utcnow,
 )
-from . import matching
+from . import extraction, matching
 from .geo import haversine_km
 from .notify import notify
 from .trust import trust_payload
@@ -50,12 +50,16 @@ class DispatchError(Exception):
         self.status_code = status_code
 
 
-INCIDENT_LABELS = {"kebakaran": "Kebakaran permukiman", "banjir": "Banjir", "longsor": "Tanah longsor",
-                   "gempa": "Gempa bumi"}
-
-
 def incident_label(report: Report) -> str:
-    return INCIDENT_LABELS.get(report.incident_type, report.incident_type.title())
+    if report.incident_type != extraction.OTHER_INCIDENT and report.incident_type in extraction.INCIDENT_TYPES:
+        return extraction.INCIDENT_TYPES[report.incident_type][0]
+    # "Lainnya" (or a type no longer in the list): the AI or reporter-corrected
+    # title says what it is better than a generic word would.
+    title = next((e.value.strip() for e in report.extractions if e.field_name == "title"), "")
+    if title and title != extraction.UNKNOWN:
+        title = title[:60]
+        return title[0].upper() + title[1:]
+    return extraction.INCIDENT_TYPES[extraction.OTHER_INCIDENT][0]
 
 
 # ---------------------------------------------------------------------------

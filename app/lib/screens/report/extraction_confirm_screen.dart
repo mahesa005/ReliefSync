@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/api.dart';
+import '../../services/incident_types.dart';
 import '../../theme.dart';
 import '../../widgets/agency_sheet.dart';
 import '../../widgets/common.dart';
@@ -30,6 +31,10 @@ class _ExtractionConfirmScreenState extends State<ExtractionConfirmScreen> {
   late final List<Json> _proposed = (widget.data['proposed_needs'] as List).cast<Json>();
   late final Set<int> _suggested = {for (final n in _proposed) n['skill_id'] as int};
   late final Map<int, int> _selected = {for (final n in _proposed) n['skill_id'] as int: n['quota'] as int};
+  late final List<Json> _incidentTypes = (widget.data['incident_types'] as List? ?? []).cast<Json>();
+  late String? _incident = _incidentTypes.any((t) => t['code'] == _report['incident_type'])
+      ? _report['incident_type'] as String
+      : null;
 
   @override
   void dispose() {
@@ -47,6 +52,7 @@ class _ExtractionConfirmScreenState extends State<ExtractionConfirmScreen> {
     final res = await Api.instance.post('/reports/${_report['id']}/confirm', {
       'fields': {for (final e in _controllers.entries) e.key: e.value.text.trim()},
       'needs': [for (final e in _selected.entries) {'skill_id': e.key, 'quota': e.value}],
+      if (_incident != null) 'incident_type': _incident,
     }) as Json;
     if (!mounted) return;
     Navigator.pushReplacement(
@@ -95,6 +101,28 @@ class _ExtractionConfirmScreenState extends State<ExtractionConfirmScreen> {
             ),
           ],
           const SizedBox(height: 18),
+          if (_incidentTypes.isNotEmpty) ...[
+            DropdownButtonFormField<String>(
+              initialValue: _incident,
+              isExpanded: true,
+              decoration: InputDecoration(
+                labelText: 'Jenis kejadian',
+                helperText: source == 'form' ? null : 'Ditentukan otomatis. Ubah jika keliru.',
+              ),
+              items: [
+                for (final t in _incidentTypes)
+                  DropdownMenuItem(value: t['code'] as String, child: Text(t['label'] as String)),
+              ],
+              onChanged: (v) => setState(() => _incident = v),
+            ),
+            if (_incident == kOtherIncident)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text('Judul di bawah dipakai sebagai nama kejadian.',
+                    style: TextStyle(color: AppColors.inkMuted, fontSize: 13)),
+              ),
+            const SizedBox(height: 14),
+          ],
           for (final f in _fields) ...[_FieldCard(field: f, controller: _controllers[f['field']]!), const SizedBox(height: 10)],
           const SizedBox(height: 14),
           SectionHeader('Bantuan yang dibutuhkan',

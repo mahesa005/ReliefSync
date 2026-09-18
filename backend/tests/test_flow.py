@@ -364,6 +364,72 @@ def test_config_is_tunable(client, db):
     assert client.get("/config").json()["alarm_seconds"] == 60
 
 
+def test_unknown_incident_type_is_labelled_by_its_title_not_as_fire(client, db):
+    h, _ = signup(client, db, "081200000031")
+    r = client.post("/reports", headers=h, json={
+        "description": "", "input_mode": "form", "lat": SITE[0], "lng": SITE[1],
+        "structured": {"title": "penculikan", "description": "Jenis kejadian: penculikan. Anak dibawa orang asing."},
+    })
+    assert r.status_code == 200, r.text
+    report = r.json()["report"]
+    assert report["incident_type"] == "lainnya"
+    assert report["incident_label"] == "Penculikan"
+    # Agencies for an unknown incident: no fire brigade first.
+    agencies = client.get("/agencies/suggest", headers=h, params={"report_id": report["id"]}).json()
+    assert "Damkar" not in agencies["primary"]["name"]
+
+    # The reporter's corrected title is what the label follows.
+    p3k = skill_id_for(db, "P3K")
+    r = client.post(f"/reports/{report['id']}/confirm", headers=h,
+                    json={"fields": {"title": "Penculikan anak"}, "needs": [{"skill_id": p3k, "quota": 1}]})
+    assert r.json()["incident_label"] == "Penculikan anak"
+
+
+def test_reporter_picks_and_corrects_incident_type(client, db):
+    h, _ = signup(client, db, "081200000032")
+    types = client.get("/incident-types").json()
+    assert [t["code"] for t in types][-1] == "lainnya"
+
+    # The form sends its choice directly -- no keyword guessing.
+    r = client.post("/reports", headers=h, json={
+        "description": "", "input_mode": "form", "lat": SITE[0], "lng": SITE[1],
+        "structured": {"title": "Jalan ke desa tertutup", "description": "Warga tidak bisa keluar.",
+                       "incident_type": "akses_terputus"},
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["report"]["incident_label"] == "Akses terputus / terisolasi"
+    assert body["incident_types"] == types
+
+    # Unknown codes are rejected, on submit and on confirm.
+    bad = client.post("/reports", headers=h, json={
+        "description": "", "input_mode": "form", "lat": SITE[0], "lng": SITE[1],
+        "structured": {"title": "x", "incident_type": "gempa"},
+    })
+    assert bad.status_code == 422
+    rid = body["report"]["id"]
+    p3k = skill_id_for(db, "P3K")
+    bad = client.post(f"/reports/{rid}/confirm", headers=h,
+                      json={"needs": [{"skill_id": p3k, "quota": 1}], "incident_type": "gempa"})
+    assert bad.status_code == 422
+
+    r = client.post(f"/reports/{rid}/confirm", headers=h,
+                    json={"needs": [{"skill_id": p3k, "quota": 1}], "incident_type": "longsor"})
+    assert r.status_code == 200, r.text
+    assert r.json()["incident_label"] == "Tanah longsor"
+
+
+def test_seed_syncs_agency_incident_types(db):
+    from app.db.models import Agency
+    from app.services.agencies import seed_agencies
+    basarnas = db.scalar(select(Agency).where(Agency.name == "Basarnas"))
+    basarnas.incident_types = ["kebakaran", "banjir", "longsor", "gempa"]  # a pre-change database
+    db.commit()
+    seed_agencies(db)
+    db.refresh(basarnas)
+    assert "bangunan_roboh" in basarnas.incident_types and "gempa" not in basarnas.incident_types
+
+
 def test_app_payloads_for_skill_catalog(client, db):
     """The request shapes the Flutter app sends: public skill catalog for
     sign-up, volunteer skills by id, a structured-form report, and needs
