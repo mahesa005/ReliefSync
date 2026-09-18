@@ -356,7 +356,11 @@ class _LiveMapState extends State<_LiveMap> {
               onTap: (_, _) => onTap(),
               // Force the first tile fetch -- on web, tiles otherwise sit
               // blank until the first camera event (flutter_map known issue).
-              onMapReady: () => _map.move(site, 14.5),
+              // Deferred a frame because the viewport can still be
+              // zero-sized on web when onMapReady fires.
+              onMapReady: () => WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _map.move(site, 14.5);
+              }),
             ),
             children: [
               osmTiles,

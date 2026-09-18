@@ -30,7 +30,6 @@ class _MapScreenState extends State<MapScreen> {
   List<Json> _reports = [];
   List<Json> _volunteers = [];
   Timer? _timer;
-  LatLng? _lastCenter;
 
   @override
   void initState() {
@@ -67,15 +66,11 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final me = context.watch<LocationService>().current;
     final center = widget.focus ?? me ?? LocationService.demoCenter;
-    // Nudge the camera instead of relying on a rebuild when the location
-    // updates -- flutter_map only fetches tiles after a camera event, so a
-    // moved center that never triggers one would leave tiles blank.
-    if (_lastCenter != null && _lastCenter != center) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _map.move(center, _map.camera.zoom);
-      });
-    }
-    _lastCenter = center;
+    // Deliberately NOT re-centering on every `center` change here: this map
+    // is meant to be freely pannable/zoomable (unlike the dashboard preview),
+    // so auto-recentering on each GPS tick would fight the user's manual pan
+    // and make the map feel frozen. Recenter is user-triggered only, via the
+    // "my location" FAB below.
     return Scaffold(
       appBar: AppBar(title: Text(widget.trackReportId != null ? 'Pantau relawan' : 'Peta kejadian')),
       body: Stack(children: [
@@ -85,8 +80,12 @@ class _MapScreenState extends State<MapScreen> {
             initialCenter: center,
             initialZoom: 15,
             // Force the first tile fetch -- on web, tiles otherwise sit blank
-            // until the first camera event (flutter_map known issue).
-            onMapReady: () => _map.move(center, 15),
+            // until the first camera event (flutter_map known issue). Deferred
+            // a frame because on web the viewport can still be zero-sized
+            // when onMapReady fires, which makes an immediate move() a no-op.
+            onMapReady: () => WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _map.move(center, 15);
+            }),
           ),
           children: [
             osmTiles,
