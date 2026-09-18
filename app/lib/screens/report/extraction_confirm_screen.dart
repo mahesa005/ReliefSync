@@ -27,12 +27,9 @@ class _ExtractionConfirmScreenState extends State<ExtractionConfirmScreen> {
       f['field'] as String: TextEditingController(text: f['value'] == _unknown ? '' : f['value'] as String),
   };
   late final List<Json> _catalog = (widget.data['catalog'] as List).cast<Json>();
-  late final Map<String, String> _reasons = {
-    for (final n in (widget.data['proposed_needs'] as List).cast<Json>()) n['category'] as String: n['reason'] as String,
-  };
-  late final Map<String, int> _selected = {
-    for (final n in (widget.data['proposed_needs'] as List).cast<Json>()) n['category'] as String: n['quota'] as int,
-  };
+  late final List<Json> _proposed = (widget.data['proposed_needs'] as List).cast<Json>();
+  late final Set<int> _suggested = {for (final n in _proposed) n['skill_id'] as int};
+  late final Map<int, int> _selected = {for (final n in _proposed) n['skill_id'] as int: n['quota'] as int};
 
   @override
   void dispose() {
@@ -49,7 +46,7 @@ class _ExtractionConfirmScreenState extends State<ExtractionConfirmScreen> {
     }
     final res = await Api.instance.post('/reports/${_report['id']}/confirm', {
       'fields': {for (final e in _controllers.entries) e.key: e.value.text.trim()},
-      'needs': [for (final e in _selected.entries) {'category': e.key, 'quota': e.value}],
+      'needs': [for (final e in _selected.entries) {'skill_id': e.key, 'quota': e.value}],
     }) as Json;
     if (!mounted) return;
     Navigator.pushReplacement(
@@ -100,9 +97,13 @@ class _ExtractionConfirmScreenState extends State<ExtractionConfirmScreen> {
           const SizedBox(height: 18),
           for (final f in _fields) ...[_FieldCard(field: f, controller: _controllers[f['field']]!), const SizedBox(height: 10)],
           const SizedBox(height: 14),
-          const SectionHeader('Bantuan yang dibutuhkan',
-              subtitle: 'Dipetakan otomatis. Atur jenis dan jumlah relawan per kebutuhan.'),
-          for (final c in _catalog) _needTile(c),
+          SectionHeader('Bantuan yang dibutuhkan',
+              subtitle: _suggested.isEmpty
+                  ? 'Pilih skill relawan yang dibutuhkan dan jumlahnya.'
+                  : 'Disarankan AI (bertanda). Atur skill dan jumlah relawan per kebutuhan.'),
+          // AI suggestions first, then the rest of the catalog.
+          for (final c in _catalog.where((c) => _suggested.contains(c['skill_id']))) _needTile(c),
+          for (final c in _catalog.where((c) => !_suggested.contains(c['skill_id']))) _needTile(c),
           const SizedBox(height: 22),
           BusyButton(label: 'Konfirmasi & cari relawan', icon: Icons.person_search_rounded, onPressed: _confirm),
         ],
@@ -111,9 +112,9 @@ class _ExtractionConfirmScreenState extends State<ExtractionConfirmScreen> {
   }
 
   Widget _needTile(Json c) {
-    final cat = c['category'] as String;
-    final on = _selected.containsKey(cat);
-    final quota = _selected[cat] ?? c['quota'] as int;
+    final id = c['skill_id'] as int;
+    final on = _selected.containsKey(id);
+    final quota = _selected[id] ?? 1;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Material(
@@ -121,7 +122,7 @@ class _ExtractionConfirmScreenState extends State<ExtractionConfirmScreen> {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           borderRadius: BorderRadius.circular(14),
-          onTap: () => setState(() => on ? _selected.remove(cat) : _selected[cat] = c['quota'] as int),
+          onTap: () => setState(() => on ? _selected.remove(id) : _selected[id] = quota),
           child: Container(
             padding: const EdgeInsets.fromLTRB(6, 6, 8, 6),
             decoration: BoxDecoration(
@@ -129,26 +130,24 @@ class _ExtractionConfirmScreenState extends State<ExtractionConfirmScreen> {
               border: Border.all(color: on ? AppColors.primary.withValues(alpha: 0.4) : AppColors.line),
             ),
             child: Row(children: [
-              Checkbox(value: on, onChanged: (_) => setState(() => on ? _selected.remove(cat) : _selected[cat] = quota)),
+              Checkbox(value: on, onChanged: (_) => setState(() => on ? _selected.remove(id) : _selected[id] = quota)),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(c['label'] as String, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5)),
-                  Text(
-                    'Skill: ${c['skill']}${_reasons[cat] != null && _reasons[cat] != 'default' ? ' · terdeteksi "${_reasons[cat]}"' : ''}',
-                    style: const TextStyle(color: AppColors.inkMuted, fontSize: 13),
-                  ),
+                  Text(c['name'] as String, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5)),
+                  if (_suggested.contains(id))
+                    const Text('Disarankan AI', style: TextStyle(color: AppColors.info, fontSize: 13, fontWeight: FontWeight.w700)),
                 ]),
               ),
               if (on) ...[
                 IconButton(
                   tooltip: 'Kurangi',
-                  onPressed: quota > 1 ? () => setState(() => _selected[cat] = quota - 1) : null,
+                  onPressed: quota > 1 ? () => setState(() => _selected[id] = quota - 1) : null,
                   icon: const Icon(Icons.remove_circle_outline),
                 ),
                 Text('$quota', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17)),
                 IconButton(
                   tooltip: 'Tambah',
-                  onPressed: quota < 20 ? () => setState(() => _selected[cat] = quota + 1) : null,
+                  onPressed: quota < 50 ? () => setState(() => _selected[id] = quota + 1) : null,
                   icon: const Icon(Icons.add_circle_outline),
                 ),
               ],
@@ -182,10 +181,13 @@ class _FieldCard extends StatelessWidget {
           const SizedBox(height: 8),
           TextField(
             controller: controller,
+            minLines: 1,
+            maxLines: field['field'] == 'description' ? 8 : 2,
+            textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(hintText: 'Belum diketahui', isDense: true),
           ),
-          const SizedBox(height: 8),
-          if (evidence != null)
+          if (evidence != null) ...[
+            const SizedBox(height: 8),
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const Icon(Icons.format_quote_rounded, size: 18, color: AppColors.inkMuted),
               const SizedBox(width: 4),
@@ -193,10 +195,8 @@ class _FieldCard extends StatelessWidget {
                 child: Text('Bukti dari teks: "$evidence"',
                     style: const TextStyle(color: AppColors.inkMuted, fontStyle: FontStyle.italic, fontSize: 13.5)),
               ),
-            ])
-          else
-            const Text('Tidak ada bukti di teks, jadi dibiarkan "belum diketahui".',
-                style: TextStyle(color: AppColors.inkMuted, fontSize: 13)),
+            ]),
+          ],
         ]),
       ),
     );

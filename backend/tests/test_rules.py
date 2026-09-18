@@ -101,6 +101,13 @@ def test_incident_type_classified_from_raw_text_regardless_of_ai():
     assert extraction._incident_type_from("tidak jelas apa yang terjadi") == "kebakaran"  # default
 
 
+def test_incident_type_matches_whole_words_only():
+    # "tapi"/"sapi" contain "api" but aren't about fire.
+    assert extraction._incident_type_from("Banjir setinggi lutut, tapi jalan masih bisa dilewati") == "banjir"
+    assert extraction._incident_type_from("Longsor menimpa kandang sapi warga") == "longsor"
+    assert extraction._incident_type_from("Ada api di dapur rumah") == "kebakaran"
+
+
 @pytest.mark.parametrize("phone,masked", [("081234567890", "0812****7890"), ("0812345678", "0812**5678")])
 def test_mask_phone(phone, masked):
     from app.core.security import mask_phone

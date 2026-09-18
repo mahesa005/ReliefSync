@@ -362,3 +362,34 @@ def test_config_is_tunable(client, db):
     h, _ = signup(client, db, "081200000016")
     assert client.put("/config/alarm_seconds", headers=h, json={"value": 60}).json() == {"alarm_seconds": 60}
     assert client.get("/config").json()["alarm_seconds"] == 60
+
+
+def test_app_payloads_for_skill_catalog(client, db):
+    """The request shapes the Flutter app sends: public skill catalog for
+    sign-up, volunteer skills by id, a structured-form report, and needs
+    confirmed by skill_id."""
+    catalog = client.get("/skills").json()  # no token: sign-up happens before login
+    assert {"skill_id", "name"} <= catalog[0].keys()
+    apar = next(c["skill_id"] for c in catalog if c["name"] == "Penggunaan APAR")
+
+    h, _ = signup(client, db, "081200000030")
+    r = client.post("/me/volunteer", headers=h, json={"skills": [{"skill_id": apar, "evidence": "certified"}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["volunteer"]["skills"][0]["skill"] == "Penggunaan APAR"
+
+    r = client.post("/reports", headers=h, json={
+        "description": "", "input_mode": "form", "lat": SITE[0], "lng": SITE[1],
+        "structured": {"title": "Banjir di Gang Mawar",
+                       "description": "Jenis kejadian: Banjir. Kondisi akses: sempit tapi bisa dilewati."},
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["report"]["incident_type"] == "banjir"
+    assert body["proposed_needs"] == []
+    assert body["catalog"] == catalog
+
+    rid = body["report"]["id"]
+    r = client.post(f"/reports/{rid}/confirm", headers=h,
+                    json={"fields": {"title": "Banjir di Gang Mawar"}, "needs": [{"skill_id": apar, "quota": 2}]})
+    assert r.status_code == 200, r.text
+    assert r.json()["needs"][0]["skill_name"] == "Penggunaan APAR"

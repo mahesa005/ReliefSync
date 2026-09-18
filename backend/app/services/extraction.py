@@ -62,11 +62,13 @@ class Extraction:
 # ---------------------------------------------------------------------------
 # Incident-type classification -- always regex-based, independent of the LLM.
 # ---------------------------------------------------------------------------
+# Whole words only: a bare "api" also matches "tapi", "sapi", "rapi"..., and
+# since fire is checked first, a flood report saying "tapi" became a fire.
 _INCIDENT_PATTERNS = [
-    ("kebakaran", r"kebakaran|terbakar|api|asap|korslet|korsleting|hangus|menyala|meledak"),
-    ("banjir", r"banjir|genangan|air naik|terendam"),
-    ("longsor", r"longsor"),
-    ("gempa", r"gempa"),
+    ("kebakaran", r"\b(kebakaran|terbakar|api|asap|korslet|korsleting|hangus|menyala|meledak)\b"),
+    ("banjir", r"\b(banjir|genangan|air naik|terendam)\b"),
+    ("longsor", r"\blongsor\b"),
+    ("gempa", r"\bgempa\b"),
 ]
 
 

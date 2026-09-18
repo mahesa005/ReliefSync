@@ -250,7 +250,7 @@ class _NeedCard extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Expanded(child: Text(need['label'] as String, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
+              Expanded(child: Text(need['skill_name'] as String, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16))),
               Text('$accepted/$quota', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
             ]),
             const SizedBox(height: 8),
@@ -266,7 +266,6 @@ class _NeedCard extends StatelessWidget {
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
               NeedStatusPill(need['status'] as String?, exhausted: need['exhausted'] == true),
-              Text('Skill ${need['skill']}', style: const TextStyle(color: AppColors.inkMuted, fontSize: 13)),
               if ((need['contacted'] as int) > 0 && need['status'] != 'selesai')
                 Text('· ${need['contacted']} ditawari', style: const TextStyle(color: AppColors.inkMuted, fontSize: 13)),
             ]),
