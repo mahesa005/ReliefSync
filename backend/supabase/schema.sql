@@ -19,6 +19,14 @@ CREATE TABLE app_config (
 );
 
 
+CREATE TABLE skills (
+	id SERIAL NOT NULL, 
+	name VARCHAR(80) NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (name)
+);
+
+
 CREATE TABLE users (
 	id VARCHAR(36) NOT NULL, 
 	name VARCHAR(120) NOT NULL, 
@@ -83,8 +91,8 @@ CREATE TABLE reports (
 	FOREIGN KEY(reporter_id) REFERENCES users (id)
 );
 
-CREATE INDEX ix_reports_reporter_id ON reports (reporter_id);
 CREATE INDEX ix_reports_status ON reports (status);
+CREATE INDEX ix_reports_reporter_id ON reports (reporter_id);
 
 CREATE TABLE volunteer_profiles (
 	user_id VARCHAR(36) NOT NULL, 
@@ -113,8 +121,8 @@ CREATE TABLE accuracy_feedback (
 	FOREIGN KEY(user_id) REFERENCES users (id)
 );
 
-CREATE INDEX ix_accuracy_feedback_report_id ON accuracy_feedback (report_id);
 CREATE INDEX ix_accuracy_feedback_reporter_id ON accuracy_feedback (reporter_id);
+CREATE INDEX ix_accuracy_feedback_report_id ON accuracy_feedback (report_id);
 
 CREATE TABLE nearby_notices (
 	id SERIAL NOT NULL, 
@@ -127,14 +135,13 @@ CREATE TABLE nearby_notices (
 	FOREIGN KEY(user_id) REFERENCES users (id)
 );
 
-CREATE INDEX ix_nearby_notices_report_id ON nearby_notices (report_id);
 CREATE INDEX ix_nearby_notices_user_id ON nearby_notices (user_id);
+CREATE INDEX ix_nearby_notices_report_id ON nearby_notices (report_id);
 
 CREATE TABLE needs (
 	id VARCHAR(36) NOT NULL, 
 	report_id VARCHAR(36) NOT NULL, 
-	category VARCHAR(40) NOT NULL, 
-	skill VARCHAR(60) NOT NULL, 
+	skill_id INTEGER NOT NULL, 
 	quota INTEGER NOT NULL, 
 	status VARCHAR(20) NOT NULL, 
 	exhausted BOOLEAN NOT NULL, 
@@ -142,9 +149,11 @@ CREATE TABLE needs (
 	batch_sent_at TIMESTAMP WITHOUT TIME ZONE, 
 	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
 	PRIMARY KEY (id), 
-	FOREIGN KEY(report_id) REFERENCES reports (id)
+	FOREIGN KEY(report_id) REFERENCES reports (id), 
+	FOREIGN KEY(skill_id) REFERENCES skills (id)
 );
 
+CREATE INDEX ix_needs_skill_id ON needs (skill_id);
 CREATE INDEX ix_needs_report_id ON needs (report_id);
 
 CREATE TABLE participants (
@@ -197,14 +206,16 @@ CREATE INDEX ix_sightings_report_id ON sightings (report_id);
 CREATE TABLE volunteer_skills (
 	id SERIAL NOT NULL, 
 	user_id VARCHAR(36) NOT NULL, 
-	skill VARCHAR(60) NOT NULL, 
+	skill_id INTEGER NOT NULL, 
 	evidence VARCHAR(20) NOT NULL, 
 	verified_experience INTEGER NOT NULL, 
 	PRIMARY KEY (id), 
-	UNIQUE (user_id, skill), 
-	FOREIGN KEY(user_id) REFERENCES volunteer_profiles (user_id)
+	UNIQUE (user_id, skill_id), 
+	FOREIGN KEY(user_id) REFERENCES volunteer_profiles (user_id), 
+	FOREIGN KEY(skill_id) REFERENCES skills (id)
 );
 
+CREATE INDEX ix_volunteer_skills_skill_id ON volunteer_skills (skill_id);
 CREATE INDEX ix_volunteer_skills_user_id ON volunteer_skills (user_id);
 
 CREATE TABLE assignments (
@@ -214,6 +225,7 @@ CREATE TABLE assignments (
 	volunteer_id VARCHAR(36) NOT NULL, 
 	role VARCHAR(20) NOT NULL, 
 	order_number INTEGER NOT NULL, 
+	credited_skill_ids JSON NOT NULL, 
 	travel_status VARCHAR(20) NOT NULL, 
 	status VARCHAR(20) NOT NULL, 
 	accepted_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
@@ -226,8 +238,8 @@ CREATE TABLE assignments (
 );
 
 CREATE INDEX ix_assignments_report_id ON assignments (report_id);
-CREATE INDEX ix_assignments_need_id ON assignments (need_id);
 CREATE INDEX ix_assignments_volunteer_id ON assignments (volunteer_id);
+CREATE INDEX ix_assignments_need_id ON assignments (need_id);
 
 CREATE TABLE offers (
 	id VARCHAR(36) NOT NULL, 
@@ -252,8 +264,8 @@ CREATE TABLE offers (
 );
 
 CREATE INDEX ix_offers_report_id ON offers (report_id);
-CREATE INDEX ix_offers_status ON offers (status);
 CREATE INDEX ix_offers_volunteer_id ON offers (volunteer_id);
+CREATE INDEX ix_offers_status ON offers (status);
 CREATE INDEX ix_offers_need_id ON offers (need_id);
 
 -- The FastAPI backend is the only database client (it connects as the postgres role,
@@ -261,6 +273,7 @@ CREATE INDEX ix_offers_need_id ON offers (need_id);
 -- public anon/authenticated keys of Supabase's auto-generated REST API (NFR-14/15).
 ALTER TABLE agencies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE app_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE skills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
@@ -286,7 +299,6 @@ INSERT INTO app_config (key, value) VALUES ('max_candidates', '50') ON CONFLICT 
 INSERT INTO app_config (key, value) VALUES ('alarm_seconds', '30') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_config (key, value) VALUES ('response_window_seconds', '300') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_config (key, value) VALUES ('escalate_on_all_reject', 'true') ON CONFLICT (key) DO NOTHING;
-INSERT INTO app_config (key, value) VALUES ('need_catalog', '{"pemadaman_awal": {"label": "Pemadaman Api Awal", "skill": "Pemadaman Api", "quota": 3}, "evakuasi": {"label": "Evakuasi Warga", "skill": "Evakuasi", "quota": 3}, "medis": {"label": "Pertolongan Pertama", "skill": "P3K", "quota": 2}, "logistik": {"label": "Logistik & Pengungsian", "skill": "Logistik", "quota": 2}, "akses": {"label": "Pengaturan Akses & Lalu Lintas", "skill": "Pengaturan Lalu Lintas", "quota": 2}, "psikososial": {"label": "Dukungan Psikososial", "skill": "Dukungan Psikososial", "quota": 1}}') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_config (key, value) VALUES ('quorum_mode', '"proportional"') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_config (key, value) VALUES ('min_confirm_sources', '2') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_config (key, value) VALUES ('confirm_prompt_interval_seconds', '120') ON CONFLICT (key) DO NOTHING;

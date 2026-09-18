@@ -1,223 +1,199 @@
-"""AI extraction of a free-text report (FR-3.1 - FR-3.3, NFR-1, NFR-9, NFR-10).
-
-One Claude call extracts ``jenis_kejadian``, ``lokasi_disebutkan``,
-``kondisi_akses`` and ``kebutuhan_dinyatakan``, each with a verbatim evidence
-snippet and a confidence score. Location coordinates are NOT extracted here --
-they are a separate field of the report.
+"""AI extraction of a free-text report: title, description, and required
+skills+quota, matched against the Skill catalog (design doc Part 1).
 
 Reliability rules:
   * hard timeout (default 5 s); on timeout / error / refusal / no API key the
-    rule-based extractor runs instead, so submission is never blocked;
-  * every evidence snippet must literally occur in the report text, otherwise the
-    field is reset to "belum diketahui" (FR-3.3: nothing is made up).
+    fallback below runs instead, so submission is never blocked;
+  * incident_type classification is a separate, always-on regex step, run
+    against the raw report text regardless of whether the AI call succeeds --
+    it was not one of the four requested extraction fields.
 """
 import asyncio
+import json
 import logging
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from ..config import get_settings
+from ..core.config import get_settings
+from ..db.models import Skill
 
 log = logging.getLogger("reliefsync.extraction")
 
+FIELDS = ["title", "description"]
+FIELD_LABELS = {"title": "Judul", "description": "Deskripsi"}
 UNKNOWN = "belum diketahui"
-FIELDS = ["jenis_kejadian", "lokasi_disebutkan", "kondisi_akses", "kebutuhan_dinyatakan"]
-FIELD_LABELS = {
-    "jenis_kejadian": "Jenis kejadian",
-    "lokasi_disebutkan": "Lokasi disebutkan",
-    "kondisi_akses": "Kondisi akses",
-    "kebutuhan_dinyatakan": "Kebutuhan dinyatakan",
-}
+MAX_QUOTA = 50
+
+DOMAIN_RULES = """Aturan pemilihan skill (dari dokumen "Skill Relawan -- ReliefSync"):
+1. Hanya pilih skill dari daftar yang diberikan, dengan skill_id yang persis sama.
+2. Tidak ada pewarisan otomatis antar-skill -- mis. P3K TIDAK berarti CPR/RJP, Berenang
+   TIDAK berarti kompetensi water rescue.
+3. "Berenang" hanya relevan jika teks menyebutkan genangan/banjir tinggi secara eksplisit.
+4. Jangan pilih skill untuk tugas umum (distribusi bantuan, pendataan, komunikasi) --
+   itu bukan skill teknis.
+5. Jangan mengarang kebutuhan yang tidak didukung oleh teks laporan."""
 
 
-class ExtractedField(BaseModel):
-    value: str = Field(description='Nilai ringkas dalam Bahasa Indonesia, atau "belum diketahui".')
-    evidence: str | None = Field(description="Cuplikan kata-per-kata dari laporan yang mendukung nilai, atau null.")
-    confidence: float = Field(description="Keyakinan 0.0 - 1.0.")
+class NeedOut(BaseModel):
+    skill_id: int
+    quota: int
 
 
 class ExtractionResult(BaseModel):
-    jenis_kejadian: ExtractedField
-    lokasi_disebutkan: ExtractedField
-    kondisi_akses: ExtractedField
-    kebutuhan_dinyatakan: ExtractedField
+    title: str
+    description: str
+    needs: list[NeedOut]
 
 
 @dataclass
 class Extraction:
-    fields: dict[str, dict]  # field -> {value, evidence, confidence}
-    source: str  # llm | rule
-    elapsed_ms: int
+    title: str
+    description: str
+    needs: list[dict] = field(default_factory=list)  # [{skill_id, quota}]
+    source: str = "rule"  # llm | rule
+    elapsed_ms: int = 0
     note: str | None = None
     incident_type: str = "kebakaran"
 
 
-SYSTEM_PROMPT = """Kamu adalah pengekstrak data untuk aplikasi tanggap bencana ReliefSync.
-Dari laporan warga, isi empat field:
-- jenis_kejadian: jenis bencana/kejadian (mis. "kebakaran permukiman").
-- lokasi_disebutkan: lokasi yang DISEBUT di teks (nama jalan, gang, RT/RW, patokan). Bukan koordinat.
-- kondisi_akses: kondisi akses menuju lokasi (mis. "gang sempit, mobil damkar sulit masuk").
-- kebutuhan_dinyatakan: bantuan yang dinyatakan/tersirat dibutuhkan (mis. "evakuasi lansia, P3K").
-
-Aturan wajib:
-1. "evidence" HARUS salinan persis (kata per kata) dari teks laporan. Jangan parafrase.
-2. Jika tidak ada bukti di teks untuk suatu field, isi value "belum diketahui", evidence null, confidence 0.
-3. Jangan mengarang informasi yang tidak ada di teks.
-4. Tulis value dalam Bahasa Indonesia yang ringkas."""
-
-
 # ---------------------------------------------------------------------------
-# Rule-based extractor (fallback, NFR-9/10)
+# Incident-type classification -- always regex-based, independent of the LLM.
 # ---------------------------------------------------------------------------
 _INCIDENT_PATTERNS = [
-    ("kebakaran", "kebakaran permukiman",
-     r"kebakaran|terbakar|api|asap|korslet|korsleting|hangus|menyala|meledak"),
-    ("banjir", "banjir", r"banjir|genangan|air naik|terendam"),
-    ("longsor", "tanah longsor", r"longsor"),
-    ("gempa", "gempa bumi", r"gempa"),
+    ("kebakaran", r"kebakaran|terbakar|api|asap|korslet|korsleting|hangus|menyala|meledak"),
+    ("banjir", r"banjir|genangan|air naik|terendam"),
+    ("longsor", r"longsor"),
+    ("gempa", r"gempa"),
 ]
-_LOCATION_PATTERN = (r"(?:\b(?:jl\.?|jalan|gang|gg\.?|rt\.?\s?\d+|rw\.?\s?\d+|kelurahan|kel\.|kecamatan|kec\.|"
-                     r"komplek|kompleks|perumahan|blok|dekat|depan|belakang|samping|sebelah)\b)")
-_ACCESS_PATTERN = (r"gang sempit|jalan sempit|sempit|tidak bisa masuk|sulit masuk|susah masuk|macet|"
-                   r"terhalang|tertutup|buntu|akses|mobil (?:damkar|pemadam) (?:tidak|sulit|susah)|licin")
-_NEED_PATTERN = (r"butuh|perlu|tolong|bantu|terjebak|terperangkap|luka|korban|evakuasi|lansia|anak|"
-                 r"pingsan|sesak|air|ember|apar|selimut|makanan")
 
 
-def _sentences(text: str) -> list[str]:
-    parts = re.split(r"(?<=[.!?\n])\s+", text.strip())
-    return [p.strip() for p in parts if p.strip()]
-
-
-def _sentence_with(text: str, pattern: str) -> tuple[str, str] | None:
-    """(matched keyword, sentence containing it) for the first match."""
-    for s in _sentences(text):
-        m = re.search(pattern, s, flags=re.IGNORECASE)
-        if m:
-            return m.group(0), s
-    return None
-
-
-def _clip(s: str, limit: int = 160) -> str:
-    return s if len(s) <= limit else s[:limit].rsplit(" ", 1)[0]
-
-
-def rule_based_extract(text: str) -> tuple[dict[str, dict], str]:
-    fields = {f: {"value": UNKNOWN, "evidence": None, "confidence": 0.0} for f in FIELDS}
-    incident_type = "kebakaran"
-
-    for itype, label, pattern in _INCIDENT_PATTERNS:
-        hit = _sentence_with(text, pattern)
-        if hit:
-            incident_type = itype
-            fields["jenis_kejadian"] = {"value": label, "evidence": hit[0], "confidence": 0.6}
-            break
-
-    hit = _sentence_with(text, _LOCATION_PATTERN)
-    if hit:
-        snippet = _clip(hit[1])
-        fields["lokasi_disebutkan"] = {"value": snippet, "evidence": snippet, "confidence": 0.5}
-
-    hit = _sentence_with(text, _ACCESS_PATTERN)
-    if hit:
-        snippet = _clip(hit[1])
-        fields["kondisi_akses"] = {"value": snippet, "evidence": snippet, "confidence": 0.5}
-
-    needs = []
-    evidence = None
-    for s in _sentences(text):
-        found = re.findall(_NEED_PATTERN, s, flags=re.IGNORECASE)
-        if found:
-            needs.extend(w.lower() for w in found)
-            evidence = evidence or _clip(s)
-    if needs:
-        uniq = list(dict.fromkeys(needs))
-        fields["kebutuhan_dinyatakan"] = {"value": ", ".join(uniq), "evidence": evidence, "confidence": 0.5}
-    return fields, incident_type
-
-
-# ---------------------------------------------------------------------------
-# LLM extractor
-# ---------------------------------------------------------------------------
-def _normalize(s: str) -> str:
-    return re.sub(r"\s+", " ", s).strip().lower()
-
-
-def enforce_evidence(fields: dict[str, dict], text: str) -> dict[str, dict]:
-    """FR-3.3: a field whose evidence is not literally in the text becomes unknown."""
-    norm_text = _normalize(text)
-    out = {}
-    for name in FIELDS:
-        f = fields.get(name) or {}
-        value = (f.get("value") or "").strip()
-        evidence = (f.get("evidence") or "").strip()
-        if not value or value.lower() == UNKNOWN or not evidence or _normalize(evidence) not in norm_text:
-            out[name] = {"value": UNKNOWN, "evidence": None, "confidence": 0.0}
-        else:
-            conf = float(f.get("confidence") or 0.0)
-            out[name] = {"value": value, "evidence": evidence, "confidence": round(min(1.0, max(0.0, conf)), 2)}
-    return out
-
-
-def _incident_type_from(value: str) -> str:
-    for itype, _, pattern in _INCIDENT_PATTERNS:
-        if re.search(pattern, value or "", flags=re.IGNORECASE):
+def _incident_type_from(text: str) -> str:
+    lowered = (text or "").lower()
+    for itype, pattern in _INCIDENT_PATTERNS:
+        if re.search(pattern, lowered):
             return itype
     return "kebakaran"
 
 
-async def _llm_extract(text: str) -> dict[str, dict]:
-    import anthropic  # imported lazily so the app runs without the SDK configured
+# ---------------------------------------------------------------------------
+# Fallback when the LLM is unavailable/times out/errors (NFR-9/10): never
+# block submission. The reporter adjusts needs manually before confirming.
+# ---------------------------------------------------------------------------
+def _fallback_title(text: str) -> str:
+    first_sentence = re.split(r"(?<=[.!?\n])\s+", text.strip(), maxsplit=1)[0]
+    return first_sentence[:80] if first_sentence else UNKNOWN
+
+
+def rule_based_extract(text: str) -> tuple[str, str]:
+    return _fallback_title(text), text.strip() or UNKNOWN
+
+
+# ---------------------------------------------------------------------------
+# LLM extractor (Groq, OpenAI-compatible chat completions)
+# ---------------------------------------------------------------------------
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+SYSTEM_PROMPT_TEMPLATE = """Kamu adalah pengekstrak data untuk aplikasi tanggap bencana ReliefSync.
+Dari laporan warga, hasilkan:
+- title: judul singkat kejadian (maks 10 kata).
+- description: ringkasan kejadian dalam Bahasa Indonesia (termasuk lokasi dan kondisi akses
+  yang disebutkan di teks, jika ada) -- boleh diparafrase, tidak perlu kata-per-kata.
+- needs: daftar {{skill_id, quota}} -- skill yang benar-benar dibutuhkan berdasarkan teks,
+  dan estimasi jumlah relawan per skill.
+
+Daftar skill yang tersedia (HANYA pilih dari sini, dengan skill_id persis):
+{catalog}
+
+{domain_rules}
+
+Balas HANYA dengan JSON valid (tanpa teks lain, tanpa markdown) sesuai skema ini:
+{schema}"""
+
+
+def _build_system_prompt(skills: list[Skill]) -> str:
+    catalog = "\n".join(f"- skill_id={s.id}: {s.name}" for s in skills)
+    schema = json.dumps(ExtractionResult.model_json_schema(), ensure_ascii=False)
+    return SYSTEM_PROMPT_TEMPLATE.format(catalog=catalog, domain_rules=DOMAIN_RULES, schema=schema)
+
+
+async def _llm_extract(text: str, skills: list[Skill]) -> dict:
+    import httpx  # already a project dependency
 
     s = get_settings()
-    client = anthropic.AsyncAnthropic(api_key=s.anthropic_api_key, timeout=s.llm_timeout_seconds, max_retries=0)
-    response = await client.messages.parse(
-        model=s.llm_model,
-        max_tokens=2048,
-        system=SYSTEM_PROMPT,
-        output_config={"effort": "low"},  # short extraction task: keep latency low (NFR-1)
-        messages=[{"role": "user", "content": f"<laporan>\n{text}\n</laporan>"}],
-        output_format=ExtractionResult,
-    )
-    if response.stop_reason == "refusal" or response.parsed_output is None:
-        raise RuntimeError(f"LLM returned no usable output (stop_reason={response.stop_reason})")
-    return response.parsed_output.model_dump()
+    system_prompt = _build_system_prompt(skills)
+    async with httpx.AsyncClient(timeout=s.llm_timeout_seconds) as client:
+        resp = await client.post(
+            GROQ_API_URL,
+            headers={"Authorization": f"Bearer {s.groq_api_key}"},
+            json={
+                "model": s.llm_model,
+                "temperature": 0,
+                "max_tokens": 1024,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"<laporan>\n{text}\n</laporan>"},
+                ],
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    choice = data["choices"][0]
+    if choice.get("finish_reason") == "content_filter":
+        raise RuntimeError("LLM refused the request (content_filter)")
+    content = choice["message"]["content"]
+    return ExtractionResult.model_validate_json(content).model_dump()
 
 
-async def extract(text: str) -> Extraction:
+def _sanitize_needs(raw_needs: list[dict], valid_skill_ids: set[int]) -> list[dict]:
+    """Drop any need whose skill_id isn't a real catalog entry -- the LLM must
+    never be trusted to only emit valid ids, even with the catalog in-prompt."""
+    out, seen = [], set()
+    for n in raw_needs:
+        skill_id = n["skill_id"]
+        if skill_id not in valid_skill_ids or skill_id in seen:
+            continue
+        seen.add(skill_id)
+        out.append({"skill_id": skill_id, "quota": max(1, min(MAX_QUOTA, int(n["quota"])))})
+    return out
+
+
+async def extract(text: str, skills: list[Skill]) -> Extraction:
     start = time.perf_counter()
     s = get_settings()
+    incident_type = _incident_type_from(text)
+    valid_skill_ids = {sk.id for sk in skills}
     note = None
-    if s.anthropic_api_key and text.strip():
+
+    if s.groq_api_key and text.strip():
         try:
-            raw = await asyncio.wait_for(_llm_extract(text), timeout=s.llm_timeout_seconds + 0.5)
-            fields = enforce_evidence(raw, text)
+            raw = await asyncio.wait_for(_llm_extract(text, skills), timeout=s.llm_timeout_seconds + 0.5)
             return Extraction(
-                fields=fields,
+                title=raw["title"].strip() or UNKNOWN,
+                description=raw["description"].strip() or text.strip(),
+                needs=_sanitize_needs(raw["needs"], valid_skill_ids),
                 source="llm",
                 elapsed_ms=int((time.perf_counter() - start) * 1000),
-                incident_type=_incident_type_from(fields["jenis_kejadian"]["value"]),
+                incident_type=incident_type,
             )
         except (TimeoutError, asyncio.TimeoutError):
-            note = "AI tidak merespons dalam batas waktu; memakai ekstraksi berbasis aturan."
-            log.warning("LLM extraction timed out; using rule-based fallback")
+            note = "AI tidak merespons dalam batas waktu; pilih kebutuhan secara manual."
+            log.warning("LLM extraction timed out; using fallback")
         except Exception as exc:  # noqa: BLE001 -- any AI failure must fall back (NFR-10)
-            note = "AI tidak tersedia; memakai ekstraksi berbasis aturan."
-            log.warning("LLM extraction failed (%s); using rule-based fallback", exc)
-    elif not s.anthropic_api_key:
-        note = "Ekstraksi berbasis aturan (AI tidak dikonfigurasi)."
+            note = "AI tidak tersedia; pilih kebutuhan secara manual."
+            log.warning("LLM extraction failed (%s); using fallback", exc)
+    elif not s.groq_api_key:
+        note = "AI tidak dikonfigurasi; pilih kebutuhan secara manual."
 
-    try:
-        fields, incident_type = rule_based_extract(text)
-    except Exception:  # noqa: BLE001
-        log.exception("rule-based extraction failed")
-        fields = {f: {"value": UNKNOWN, "evidence": None, "confidence": 0.0} for f in FIELDS}
-        incident_type = "kebakaran"
+    title, description = rule_based_extract(text)
     return Extraction(
-        fields=enforce_evidence(fields, text),
+        title=title,
+        description=description,
+        needs=[],
         source="rule",
         elapsed_ms=int((time.perf_counter() - start) * 1000),
         note=note,

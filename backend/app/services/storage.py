@@ -3,7 +3,7 @@ import uuid
 
 import httpx
 
-from ..config import get_settings
+from ..core.config import get_settings
 
 ALLOWED = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic"}
 

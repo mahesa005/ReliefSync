@@ -8,8 +8,8 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..app_config import Cfg
-from ..models import AccuracyFeedback
+from ..core.app_config import Cfg
+from ..db.models import AccuracyFeedback
 
 TIER_LABELS = {
     "baru": "Akun baru",

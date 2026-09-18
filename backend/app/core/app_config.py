@@ -7,7 +7,7 @@ read back from it at runtime, so the team can tune them without a code change
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import AppConfig
+from ..db.models import AppConfig
 
 DEFAULTS: dict[str, object] = {
     # --- Matching (4.2 - 4.9) ---------------------------------------------
@@ -25,16 +25,6 @@ DEFAULTS: dict[str, object] = {
     "alarm_seconds": 30,
     "response_window_seconds": 300,
     "escalate_on_all_reject": True,  # FR-5.10
-
-    # --- Needs (FR-4.3, Open Item #3) ---------------------------------------
-    "need_catalog": {
-        "pemadaman_awal": {"label": "Pemadaman Api Awal", "skill": "Pemadaman Api", "quota": 3},
-        "evakuasi": {"label": "Evakuasi Warga", "skill": "Evakuasi", "quota": 3},
-        "medis": {"label": "Pertolongan Pertama", "skill": "P3K", "quota": 2},
-        "logistik": {"label": "Logistik & Pengungsian", "skill": "Logistik", "quota": 2},
-        "akses": {"label": "Pengaturan Akses & Lalu Lintas", "skill": "Pengaturan Lalu Lintas", "quota": 2},
-        "psikososial": {"label": "Dukungan Psikososial", "skill": "Dukungan Psikososial", "quota": 1},
-    },
 
     # --- Collective confirmation (4.13 / 5.11, Open Item #2) ---------------
     # "proportional" = T(N) table of Section 4.13; "simple" = 5.11 (3 people / 50%).
@@ -67,9 +57,9 @@ class Cfg:
     """Per-request/per-tick view of the config table, loaded in one query.
 
     The table is small (~25 rows) and every request touches several different
-    keys (matching weights, batch/quorum settings, the need catalog, ...);
-    fetching them one at a time was ~10 extra round trips per report against a
-    remote DB (~2s), so we read the whole table up front instead."""
+    keys (matching weights, batch/quorum settings, ...); fetching them one at a
+    time was ~10 extra round trips per report against a remote DB (~2s), so we
+    read the whole table up front instead."""
 
     def __init__(self, db: Session):
         self._db = db

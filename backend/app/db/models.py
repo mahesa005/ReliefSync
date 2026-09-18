@@ -19,7 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .db import Base
+from .session import Base
 
 
 def utcnow() -> datetime:
@@ -28,6 +28,16 @@ def utcnow() -> datetime:
 
 def new_id() -> str:
     return str(uuid.uuid4())
+
+
+class Skill(Base):
+    """Canonical skill catalog (Skill Relawan reference doc, IFest 2026 Tim STEICON).
+    id + name only -- domain definitions/groupings live in the LLM prompt, not here."""
+
+    __tablename__ = "skills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
 
 
 # --------------------------------------------------------------------------
@@ -81,15 +91,16 @@ class VolunteerProfile(Base):
 
 class VolunteerSkill(Base):
     __tablename__ = "volunteer_skills"
-    __table_args__ = (UniqueConstraint("user_id", "skill"),)
+    __table_args__ = (UniqueConstraint("user_id", "skill_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("volunteer_profiles.user_id"), index=True)
-    skill: Mapped[str] = mapped_column(String(60))
+    skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id"), index=True)
     evidence: Mapped[str] = mapped_column(String(20), default="self_declared")  # or "certified"
     verified_experience: Mapped[int] = mapped_column(Integer, default=0)  # per skill (4.2)
 
     profile: Mapped[VolunteerProfile] = relationship(back_populates="skills")
+    skill: Mapped[Skill] = relationship()
 
 
 # --------------------------------------------------------------------------
@@ -158,8 +169,7 @@ class Need(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     report_id: Mapped[str] = mapped_column(ForeignKey("reports.id"), index=True)
-    category: Mapped[str] = mapped_column(String(40))
-    skill: Mapped[str] = mapped_column(String(60))  # Required Skill for SkillMatch
+    skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id"), index=True)  # Required Skill for SkillMatch
     quota: Mapped[int] = mapped_column(Integer)  # Required Need (FR-4.3)
     # belum_ada | sebagian | penuh | selesai (FR-8.1)
     status: Mapped[str] = mapped_column(String(20), default="belum_ada")
@@ -169,6 +179,7 @@ class Need(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     report: Mapped[Report] = relationship(back_populates="needs")
+    skill: Mapped[Skill] = relationship()
 
 
 class Offer(Base):
@@ -205,6 +216,9 @@ class Assignment(Base):
     volunteer_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     role: Mapped[str] = mapped_column(String(20))  # utama | tambahan (4.11)
     order_number: Mapped[int] = mapped_column(Integer)  # "relawan ke-N" for this need
+    # skill_ids of OTHER needs on this report this same assignment also satisfies,
+    # beyond need_id (the one actually dispatched/alarmed) -- cross-skill credit.
+    credited_skill_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
     travel_status: Mapped[str] = mapped_column(String(20), default="otw")  # otw | sampai
     status: Mapped[str] = mapped_column(String(20), default="aktif")  # aktif | selesai | dilepas
     accepted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

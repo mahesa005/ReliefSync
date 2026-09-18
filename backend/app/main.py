@@ -14,10 +14,10 @@ from sqlalchemy import text
 
 from .api import admin, auth, me, reports, volunteer
 from .api.deps import engine_lock
-from .app_config import seed_config
-from .config import get_settings
-from .db import Base, SessionLocal, engine
-from .services import agencies, confirmation, dispatch, simulation
+from .core.app_config import seed_config
+from .core.config import get_settings
+from .db.session import Base, SessionLocal, engine
+from .services import agencies, confirmation, dispatch, simulation, skills
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("reliefsync")
@@ -42,6 +42,7 @@ def init_db() -> None:
     with SessionLocal() as db:
         seed_config(db)
         agencies.seed_agencies(db)
+        skills.seed_skills(db)
         if get_settings().seed_demo_data:
             simulation.seed_demo(db)
 
@@ -71,7 +72,7 @@ async def lifespan(_: FastAPI):
     init_db()
     task = asyncio.create_task(_engine_loop(settings.tick_seconds)) if settings.run_engine else None
     log.info("ReliefSync API ready (db=%s, ai=%s)", settings.database_url.split("@")[-1],
-             "claude" if settings.anthropic_api_key else "rule-based")
+             "groq" if settings.groq_api_key else "rule-based")
     yield
     if task:
         task.cancel()
@@ -92,5 +93,5 @@ app.mount("/uploads", StaticFiles(directory=_uploads), name="uploads")
 @app.get("/health")
 def health():
     s = get_settings()
-    return {"ok": True, "ai": "claude" if s.anthropic_api_key else "rule-based",
+    return {"ok": True, "ai": "groq" if s.groq_api_key else "rule-based",
             "fcm": bool(s.firebase_credentials)}
