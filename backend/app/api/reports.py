@@ -485,3 +485,9 @@ def suggest_agencies(report_id: str | None = None, lat: float | None = None, lng
 @router.get("/needs/catalog")
 def needs_catalog(user: User = Depends(current_user), db: Session = Depends(get_db)):
     return catalog_payload(db)
+
+
+@router.get("/skills")
+def skills_catalog(db: Session = Depends(get_db)):
+    """Public: sign-up (before any token exists) picks volunteer skills from it."""
+    return catalog_payload(db)

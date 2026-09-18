@@ -23,7 +23,7 @@ class _VolunteerOnboardingScreenState extends State<VolunteerOnboardingScreen> {
   late final bool _editing = _session.isVolunteer;
   late List<Json> _skills = [
     for (final s in (_session.volunteer?['skills'] as List? ?? []).cast<Json>())
-      {'skill': s['skill'], 'evidence': s['evidence']},
+      {'skill_id': s['skill_id'], 'evidence': s['evidence']},
   ];
 
   Future<void> _save() async {

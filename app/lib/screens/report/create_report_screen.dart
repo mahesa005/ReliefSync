@@ -92,6 +92,25 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
+  /// The backend's form schema is just {title, description} and it infers the
+  /// incident type from keywords in the description, so the chosen type goes
+  /// into the description too -- otherwise it would default to "kebakaran".
+  Json _structuredBody() {
+    final location = _formLocation.text.trim();
+    final access = _formAccess.text.trim();
+    final needs = _formNeeds.text.trim();
+    final incident = _incident[0].toUpperCase() + _incident.substring(1);
+    return {
+      'title': location.isEmpty ? incident : '$incident di $location',
+      'description': [
+        'Jenis kejadian: $incident.',
+        if (location.isNotEmpty) 'Lokasi: $location.',
+        if (access.isNotEmpty) 'Kondisi akses: $access.',
+        if (needs.isNotEmpty) 'Bantuan yang dibutuhkan: $needs.',
+      ].join(' '),
+    };
+  }
+
   Future<void> _submit() async {
     if (_location == null) {
       showMessage('Tentukan lokasi kejadian terlebih dahulu.', error: true);
@@ -110,13 +129,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       'is_manual_location': _manualLocation,
       'contact_phone': _contact.text.trim().isEmpty ? null : _contact.text.trim(),
       'photo_urls': _photos,
-      if (_formMode)
-        'structured': {
-          'jenis_kejadian': _incident,
-          'lokasi_disebutkan': _formLocation.text.trim(),
-          'kondisi_akses': _formAccess.text.trim(),
-          'kebutuhan_dinyatakan': _formNeeds.text.trim(),
-        },
+      if (_formMode) 'structured': _structuredBody(),
     };
     final res = await Api.instance.post('/reports', body) as Json;
     if (!mounted) return;
