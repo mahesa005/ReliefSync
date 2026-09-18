@@ -42,6 +42,8 @@ class NeedOut(BaseModel):
 
 
 class ExtractionResult(BaseModel):
+    valid: bool
+    invalid_reason: str | None = None
     title: str
     description: str
     # Plain str, not a Literal: an unexpected value should fall back to the
@@ -59,6 +61,10 @@ class Extraction:
     elapsed_ms: int = 0
     note: str | None = None
     incident_type: str = "lainnya"
+    # Rule-based fallback can't judge this, so it defaults to True (trust the
+    # reporter) -- only a successful LLM call can set this False.
+    valid: bool = True
+    invalid_reason: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -124,13 +130,21 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 SYSTEM_PROMPT_TEMPLATE = """Kamu adalah pengekstrak data untuk aplikasi tanggap bencana ReliefSync.
 Dari laporan warga, hasilkan:
-- title: judul singkat kejadian (maks 10 kata).
+- valid: false HANYA jika teks bukan bahasa manusia yang bisa dipahami (karakter acak, hasil
+  tekan tombol sembarang, spam/iklan, atau sama sekali tidak menjelaskan situasi/kejadian
+  apa pun). Laporan yang singkat atau samar TETAP valid=true selama itu kalimat manusia yang
+  masuk akal (mis. "ada kejadian di kampung sebelah, tolong dibantu" -> valid=true). Jangan
+  menilai valid berdasarkan kelengkapan detail, hanya berdasarkan apakah teksnya bermakna.
+- invalid_reason: alasan singkat jika valid=false, null jika valid=true.
+- title: judul singkat kejadian (maks 10 kata). Jika valid=false, isi "Laporan tidak valid".
 - description: ringkasan kejadian dalam Bahasa Indonesia (termasuk lokasi dan kondisi akses
-  yang disebutkan di teks, jika ada) -- boleh diparafrase, tidak perlu kata-per-kata.
+  yang disebutkan di teks, jika ada) -- boleh diparafrase, tidak perlu kata-per-kata. Jika
+  valid=false, boleh diisi ringkas menjelaskan kenapa teks tidak valid.
 - incident_type: SATU jenis kejadian utama dari daftar di bawah (tulis kodenya persis).
-  Jika beberapa cocok, pilih yang paling menentukan bantuan yang dibutuhkan.
+  Jika beberapa cocok, pilih yang paling menentukan bantuan yang dibutuhkan. Jika valid=false,
+  isi "{other_incident}".
 - needs: daftar {{skill_id, quota}} -- skill yang benar-benar dibutuhkan berdasarkan teks,
-  dan estimasi jumlah relawan per skill.
+  dan estimasi jumlah relawan per skill. Jika valid=false, kosongkan (list kosong).
 
 Jenis kejadian (kode: keterangan):
 {incident_types}
@@ -149,7 +163,8 @@ def _build_system_prompt(skills: list[Skill]) -> str:
     incident_types = "\n".join(f"- {code}: {desc}" for code, (_, desc) in INCIDENT_TYPES.items())
     schema = json.dumps(ExtractionResult.model_json_schema(), ensure_ascii=False)
     return SYSTEM_PROMPT_TEMPLATE.format(catalog=catalog, incident_types=incident_types,
-                                         domain_rules=DOMAIN_RULES, schema=schema)
+                                         domain_rules=DOMAIN_RULES, schema=schema,
+                                         other_incident=OTHER_INCIDENT)
 
 
 async def _llm_extract(text: str, skills: list[Skill]) -> dict:
@@ -208,13 +223,16 @@ async def extract(text: str, skills: list[Skill]) -> Extraction:
         try:
             raw = await asyncio.wait_for(_llm_extract(text, skills), timeout=s.llm_timeout_seconds + 0.5)
             ai_type = (raw.get("incident_type") or "").strip().lower()
+            is_valid = bool(raw.get("valid", True))
             return Extraction(
                 title=raw["title"].strip() or UNKNOWN,
                 description=raw["description"].strip() or text.strip(),
-                needs=_sanitize_needs(raw["needs"], valid_skill_ids),
+                needs=_sanitize_needs(raw["needs"], valid_skill_ids) if is_valid else [],
                 source="llm",
                 elapsed_ms=int((time.perf_counter() - start) * 1000),
                 incident_type=ai_type if ai_type in INCIDENT_TYPES else incident_type,
+                valid=is_valid,
+                invalid_reason=(raw.get("invalid_reason") or None) if not is_valid else None,
             )
         except (TimeoutError, asyncio.TimeoutError):
             note = "AI tidak merespons dalam batas waktu; pilih kebutuhan secara manual."

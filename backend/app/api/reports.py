@@ -157,6 +157,7 @@ def report_view(db: Session, report: Report, viewer: User) -> dict:
     out = {
         "id": report.id,
         "status": report.status,
+        "content_valid": report.content_valid,
         "incident_type": report.incident_type,
         "incident_label": dispatch.incident_label(report),
         "raw_text": report.raw_text,
@@ -256,6 +257,7 @@ async def create_report(body: ReportIn, user: User = Depends(current_user), db: 
         source, elapsed, note = "form", 0, "Diisi langsung lewat formulir."
         incident_type = s.incident_type or extraction._incident_type_from(s.description or s.title)
         proposed_needs = []
+        content_valid = True  # manual structured entry isn't judged for gibberish
     else:
         available_skills = skills_service.list_skills(db)
         result = await extraction.extract(text, available_skills)
@@ -264,12 +266,15 @@ async def create_report(body: ReportIn, user: User = Depends(current_user), db: 
             "description": {"value": result.description, "evidence": None,
                             "confidence": 1.0 if result.source == "llm" else 0.0},
         }
-        source, elapsed, note = result.source, result.elapsed_ms, result.note
+        source, elapsed = result.source, result.elapsed_ms
+        note = result.invalid_reason or result.note
         incident_type = result.incident_type
         proposed_needs = result.needs
+        content_valid = result.valid
 
     report.incident_type = incident_type
     report.extraction_source, report.extraction_ms, report.extraction_note = source, elapsed, note
+    report.content_valid = content_valid
     for name in extraction.FIELDS:
         f = fields[name]
         db.add(ReportExtraction(report_id=report.id, field_name=name, ai_value=f["value"], value=f["value"],
@@ -302,6 +307,9 @@ def confirm_report(report_id: str, body: ConfirmIn, user: User = Depends(current
         raise HTTPException(403, "Hanya pelapor yang dapat mengonfirmasi laporan ini.")
     if report.status != "draft":
         raise HTTPException(409, "Laporan sudah dikonfirmasi.")
+    if not report.content_valid:
+        raise HTTPException(422, "Laporan ini tidak terlihat seperti laporan kejadian yang valid. "
+                                 "Mohon perbaiki isi laporan sebelum mengonfirmasi.")
     valid_skill_ids = {s.id for s in skills_service.list_skills(db)}
     specs, seen = [], set()
     for n in body.needs:

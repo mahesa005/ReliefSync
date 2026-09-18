@@ -94,6 +94,31 @@ def test_llm_success_maps_needs_to_real_skill_ids(monkeypatch, db):
     assert result.title == "Kebakaran di Gang Mawar"
     assert result.needs == [{"skill_id": p3k.id, "quota": 2}]
     assert result.incident_type == "kebakaran"
+    assert result.valid is True
+    assert result.invalid_reason is None
+
+
+def test_llm_flags_gibberish_as_invalid_and_drops_needs(monkeypatch, db):
+    """Guardrail: the LLM can mark content as invalid (random characters, spam,
+    not describing any real situation); needs are force-emptied server-side
+    even if the model didn't already do so, per _sanitize_needs's "never
+    trust the LLM" principle."""
+    skills = list(db.scalars(select(Skill)))
+    p3k = next(s for s in skills if s.name == "P3K")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "groq_api_key", "sk-test")
+
+    async def fake_llm(_text, _skills):
+        return {"valid": False, "invalid_reason": "Teks tidak bermakna (karakter acak).",
+                "title": "Laporan tidak valid", "description": "asdkfj alskdjf alskdjf",
+                "needs": [{"skill_id": p3k.id, "quota": 1}]}  # model didn't clean up -- must be ignored
+
+    monkeypatch.setattr(extraction, "_llm_extract", fake_llm)
+    result = asyncio.run(extraction.extract("asdkfj alskdjf alskdjf", skills))
+    assert result.source == "llm"
+    assert result.valid is False
+    assert result.invalid_reason == "Teks tidak bermakna (karakter acak)."
+    assert result.needs == []
 
 
 @pytest.mark.parametrize("ai_type,expected", [

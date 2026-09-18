@@ -129,6 +129,9 @@ class Report(Base):
     extraction_source: Mapped[str | None] = mapped_column(String(20))  # llm | rule | form
     extraction_ms: Mapped[int | None] = mapped_column(Integer)
     extraction_note: Mapped[str | None] = mapped_column(Text)
+    # False only when the AI judged raw_text as gibberish/spam/not a real report
+    # (guardrail); confirm is blocked until the reporter rewrites it.
+    content_valid: Mapped[bool] = mapped_column(Boolean, default=True)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     resolution_started_at: Mapped[datetime | None] = mapped_column(DateTime)  # first arrival
