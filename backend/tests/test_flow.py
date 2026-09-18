@@ -293,6 +293,25 @@ def test_no_candidates_is_visible_not_silent(client, db):
     assert view["needs"][0]["status"] == "belum_ada" and view["needs"][0]["exhausted"] is True
 
 
+def test_confirm_blocked_when_content_flagged_invalid(client, db):
+    """Guardrail: a report the AI judged as gibberish/spam cannot be confirmed
+    into an active incident until the reporter rewrites it."""
+    p3k_id = skill_id_for(db, "P3K")
+    rep_h, _ = signup(client, db, "081200000017")
+    r = client.post("/reports", headers=rep_h, json={"description": TEXT, "lat": SITE[0], "lng": SITE[1]})
+    rid = r.json()["report"]["id"]
+
+    report = db.get(Report, rid)
+    report.content_valid = False
+    db.commit()
+
+    r = client.post(f"/reports/{rid}/confirm", headers=rep_h,
+                    json={"needs": [{"skill_id": p3k_id, "quota": 1}], "fields": {}})
+    assert r.status_code == 422, r.text
+    db.expire_all()
+    assert db.get(Report, rid).status == "draft"  # never activated
+
+
 def test_reporter_never_matched_to_own_report(client, db):
     add_volunteers(db, 2)
     h, uid = signup(client, db, "081200000011", volunteer_skills=["P3K"])
