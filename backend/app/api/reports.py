@@ -37,10 +37,8 @@ router = APIRouter(tags=["reports"])
 # ---------------------------------------------------------------------------
 class StructuredIn(BaseModel):
     """Direct structured form -- the reporter may skip free text (5.5 step 2)."""
-    jenis_kejadian: str = "kebakaran permukiman"
-    lokasi_disebutkan: str = ""
-    kondisi_akses: str = ""
-    kebutuhan_dinyatakan: str = ""
+    title: str = ""
+    description: str = Field(default="", max_length=4000)
 
 
 class ReportIn(BaseModel):
@@ -224,15 +222,27 @@ async def create_report(body: ReportIn, user: User = Depends(current_user), db: 
     db.commit()  # the raw report is safe before any AI call
 
     if body.input_mode == "form" and body.structured is not None:
-        s = body.structured.model_dump()
-        fields = {k: {"value": (v.strip() or extraction.UNKNOWN), "evidence": None,
-                      "confidence": 1.0 if v.strip() else 0.0} for k, v in s.items()}
+        s = body.structured
+        fields = {
+            "title": {"value": s.title.strip() or extraction.UNKNOWN, "evidence": None,
+                      "confidence": 1.0 if s.title.strip() else 0.0},
+            "description": {"value": s.description.strip() or extraction.UNKNOWN, "evidence": None,
+                            "confidence": 1.0 if s.description.strip() else 0.0},
+        }
         source, elapsed, note = "form", 0, "Diisi langsung lewat formulir."
-        incident_type = extraction._incident_type_from(s["jenis_kejadian"])
+        incident_type = extraction._incident_type_from(s.description or s.title)
+        proposed_needs = []
     else:
-        result = await extraction.extract(text)
-        fields, source, elapsed, note = result.fields, result.source, result.elapsed_ms, result.note
+        available_skills = skills_service.list_skills(db)
+        result = await extraction.extract(text, available_skills)
+        fields = {
+            "title": {"value": result.title, "evidence": None, "confidence": 1.0 if result.source == "llm" else 0.0},
+            "description": {"value": result.description, "evidence": None,
+                            "confidence": 1.0 if result.source == "llm" else 0.0},
+        }
+        source, elapsed, note = result.source, result.elapsed_ms, result.note
         incident_type = result.incident_type
+        proposed_needs = result.needs
 
     report.incident_type = incident_type
     report.extraction_source, report.extraction_ms, report.extraction_note = source, elapsed, note
@@ -244,7 +254,7 @@ async def create_report(body: ReportIn, user: User = Depends(current_user), db: 
     db.refresh(report)
     return {
         "report": report_view(db, report, user),
-        "proposed_needs": [],  # manual selection only until Task 4 wires the new extraction contract
+        "proposed_needs": proposed_needs,
         "catalog": catalog_payload(db),
     }
 
