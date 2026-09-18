@@ -428,19 +428,23 @@ git commit -m "feat: add independent verifier trust scoring service"
 
 ---
 
-### Task 3: Expose verifier trust on the user's own profile
+### Task 3: Expose verifier trust everywhere a reporter's trust already appears
+
+Reporter trust (`trust_payload`) is currently shown in exactly four places: the user's own profile, and three places where *other* people see a reporter's trust tier (report detail, a volunteer's offer/alarm, a volunteer's active task). Verifier trust must appear alongside reporter trust in all four, not just on the user's own profile — these are two independent facets of the same person's credibility, and anywhere you're told "here's how trustworthy this reporter is," you should also be told "here's how trustworthy this same person has been as a verifier."
 
 **Files:**
-- Modify: `backend/app/api/me.py`
+- Modify: `backend/app/api/me.py` (own profile)
+- Modify: `backend/app/api/reports.py` (`report_view` — shown to anyone viewing a report)
+- Modify: `backend/app/api/volunteer.py` (`offer_view` — shown on an offer/alarm; `task_view` — shown on an accepted task)
 - Modify: `backend/tests/test_flow.py`
 
 **Interfaces:**
 - Consumes: `verifier_trust.verifier_payload(db, user_id)` (Task 2).
-- Produces: `user_payload(db, user)`'s returned dict gains a `"verifier_trust"` key, shape `{"tier": str, "label": str, "score": int}`.
+- Produces: a new `"reporter_verifier_trust"` key (shape `{"tier": str, "label": str, "score": int}`) placed directly alongside every existing `"reporter_trust"` key in `report_view`, `offer_view`, and `task_view`; and a `"verifier_trust"` key on `user_payload` (own profile — naming differs because there the subject is unambiguously "you," not "the reporter").
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing tests**
 
-In `backend/tests/test_flow.py`, extend `test_register_login_and_otp` (it already fetches `/me` and asserts on `me["trust"]`) to also check the new key:
+In `backend/tests/test_flow.py`, extend `test_register_login_and_otp` (it already fetches `/me` and asserts on `me["trust"]`):
 ```python
     me = client.get("/me", headers={"Authorization": f"Bearer {r.json()['token']}"}).json()
     assert me["phone_masked"] == "0812****2222"
@@ -456,14 +460,44 @@ becomes:
     assert me["verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+Also extend `test_volunteer_api_accept_and_task` (it already asserts `reqs[0]["reporter_trust"]["label"]`), right after that existing assertion:
+```python
+    assert reqs[0]["reporter_trust"]["label"] == "Akun baru"  # FR-9.3
+```
+add immediately after it:
+```python
+    assert reqs[0]["reporter_verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
+```
+and later in the same test, where `task` is fetched after accepting the offer, add one more assertion right after the existing task-role check:
+```python
+    task = client.post(f"/offers/{reqs[0]['offer_id']}/accept", headers=vol_h).json()
+    assert task["role"] == "utama" and task["order_number"] == 1
+```
+becomes:
+```python
+    task = client.post(f"/offers/{reqs[0]['offer_id']}/accept", headers=vol_h).json()
+    assert task["role"] == "utama" and task["order_number"] == 1
+    assert task["reporter_verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
+```
 
-Run: `cd backend && .venv/Scripts/python.exe -m pytest tests/test_flow.py::test_register_login_and_otp -v`
-Expected: FAIL — `KeyError: 'verifier_trust'`.
+And extend `test_sighting_and_nearby_widget` (it already fetches a report view and checks fields on it), right after the existing sightings assertion:
+```python
+    view = client.post(f"/reports/{rid}/sightings", headers=other_h).json()
+    assert view["sightings"] == 1 and view["i_saw"] is True
+```
+add:
+```python
+    assert view["reporter_verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
+```
 
-- [ ] **Step 3: Wire it into `user_payload`**
+- [ ] **Step 2: Run tests to verify they fail**
 
-In `backend/app/api/me.py`, add the import:
+Run: `cd backend && .venv/Scripts/python.exe -m pytest tests/test_flow.py::test_register_login_and_otp tests/test_flow.py::test_volunteer_api_accept_and_task tests/test_flow.py::test_sighting_and_nearby_widget -v`
+Expected: FAIL — `KeyError` on the new keys in all three.
+
+- [ ] **Step 3: Wire it into `me.py`'s `user_payload`**
+
+Add the import:
 ```python
 from ..services.trust import trust_payload
 ```
@@ -506,16 +540,82 @@ def user_payload(db: Session, user: User) -> dict:
 ```
 (the rest of the function/dict is unchanged).
 
-- [ ] **Step 4: Run the full test suite**
+- [ ] **Step 4: Wire it into `reports.py`'s `report_view`**
+
+Add the import alongside the existing trust import:
+```python
+from ..services.trust import trust_payload
+```
+becomes:
+```python
+from ..services.trust import trust_payload
+from ..services.verifier_trust import verifier_payload
+```
+
+Current:
+```python
+        "photo_urls": report.photo_urls or [],
+        "reporter_trust": trust_payload(db, report.reporter_id, cfg),
+        "is_reporter": is_reporter,
+```
+becomes:
+```python
+        "photo_urls": report.photo_urls or [],
+        "reporter_trust": trust_payload(db, report.reporter_id, cfg),
+        "reporter_verifier_trust": verifier_payload(db, report.reporter_id),
+        "is_reporter": is_reporter,
+```
+
+- [ ] **Step 5: Wire it into `volunteer.py`'s `offer_view` and `task_view`**
+
+Add the import alongside the existing trust import:
+```python
+from ..services.trust import trust_payload
+```
+becomes:
+```python
+from ..services.trust import trust_payload
+from ..services.verifier_trust import verifier_payload
+```
+
+In `offer_view`, current:
+```python
+        "matched_skill": need.skill.name,
+        "reporter_trust": trust_payload(db, report.reporter_id, cfg),  # FR-9.3
+        "contact_phone_masked": mask_phone(report.contact_phone),
+```
+becomes:
+```python
+        "matched_skill": need.skill.name,
+        "reporter_trust": trust_payload(db, report.reporter_id, cfg),  # FR-9.3
+        "reporter_verifier_trust": verifier_payload(db, report.reporter_id),
+        "contact_phone_masked": mask_phone(report.contact_phone),
+```
+
+In `task_view`, current:
+```python
+        "contact_phone_masked": mask_phone(report.contact_phone),
+        "reporter_trust": trust_payload(db, report.reporter_id, cfg),
+        "quorum": confirmation.quorum_state(db, report, cfg),
+```
+becomes:
+```python
+        "contact_phone_masked": mask_phone(report.contact_phone),
+        "reporter_trust": trust_payload(db, report.reporter_id, cfg),
+        "reporter_verifier_trust": verifier_payload(db, report.reporter_id),
+        "quorum": confirmation.quorum_state(db, report, cfg),
+```
+
+- [ ] **Step 6: Run the full test suite**
 
 Run: `cd backend && .venv/Scripts/python.exe -m pytest -q`
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add backend/app/api/me.py backend/tests/test_flow.py
-git commit -m "feat: expose verifier trust tier on the user's own profile"
+git add backend/app/api/me.py backend/app/api/reports.py backend/app/api/volunteer.py backend/tests/test_flow.py
+git commit -m "feat: expose verifier trust wherever reporter trust already appears"
 ```
 
 ---
