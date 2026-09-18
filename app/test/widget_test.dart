@@ -5,6 +5,7 @@ import 'package:reliefsync/services/api.dart';
 import 'package:reliefsync/theme.dart';
 import 'package:reliefsync/widgets/common.dart';
 import 'package:reliefsync/widgets/incident_icon.dart';
+import 'package:reliefsync/widgets/photo_viewer.dart';
 import 'package:reliefsync/widgets/skill_picker.dart';
 
 void main() {
@@ -72,6 +73,34 @@ void main() {
     expect(find.text('Disarankan AI'), findsOneWidget);
     expect(find.text('3'), findsOneWidget); // AI-proposed quota
     expect(find.text('Banjir'), findsOneWidget); // incident type preselected from the report
+  });
+
+  testWidgets('tapping a photo opens a full-screen viewer you can swipe and close', (tester) async {
+    await tester.pumpWidget(MaterialApp(
+      theme: buildTheme(),
+      home: const Scaffold(body: PhotoStrip(['/uploads/a.jpg', '/uploads/b.jpg', '/uploads/c.jpg'])),
+    ));
+    expect(find.byType(PhotoViewer), findsNothing);
+
+    await tester.tap(find.byType(Image).at(1)); // open on the 2nd photo
+    await tester.pumpAndSettle();
+    expect(find.byType(PhotoViewer), findsOneWidget);
+    expect(find.text('2 / 3'), findsOneWidget);
+
+    await tester.drag(find.byType(PageView), const Offset(-500, 0)); // swipe to the next photo
+    await tester.pumpAndSettle();
+    expect(find.text('3 / 3'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Tutup'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PhotoViewer), findsNothing);
+  });
+
+  testWidgets('a single photo shows no page counter', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: buildTheme(), home: const PhotoViewer(urls: ['/uploads/a.jpg'])));
+    await tester.pump();
+    expect(find.textContaining('/ '), findsNothing);
+    expect(find.byTooltip('Tutup'), findsOneWidget);
   });
 
   testWidgets('skill picker adds and removes catalog skills by id', (tester) async {
