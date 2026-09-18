@@ -216,6 +216,9 @@ class Assignment(Base):
     volunteer_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     role: Mapped[str] = mapped_column(String(20))  # utama | tambahan (4.11)
     order_number: Mapped[int] = mapped_column(Integer)  # "relawan ke-N" for this need
+    # skill_ids of OTHER needs on this report this same assignment also satisfies,
+    # beyond need_id (the one actually dispatched/alarmed) -- cross-skill credit.
+    credited_skill_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
     travel_status: Mapped[str] = mapped_column(String(20), default="otw")  # otw | sampai
     status: Mapped[str] = mapped_column(String(20), default="aktif")  # aktif | selesai | dilepas
     accepted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

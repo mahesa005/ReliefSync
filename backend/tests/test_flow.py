@@ -210,6 +210,37 @@ def test_full_dispatch_flow(client, db):
     assert all(a.status == "selesai" for a in db.scalars(select(Assignment).where(Assignment.report_id == rid)))
 
 
+def test_cross_skill_credit_fills_second_need_without_separate_alarm(client, db):
+    rep_h, _ = signup(client, db, "081200000020", "Pelapor Multi")
+    p3k_id = skill_id_for(db, "P3K")
+    apar_id = skill_id_for(db, "Penggunaan APAR")
+
+    # one volunteer with BOTH skills, close by
+    multi_h, multi_id = signup(client, db, "081200000021", "Relawan Serba Bisa",
+                               volunteer_skills=["P3K", "Penggunaan APAR"])
+    client.post("/me/location", headers=multi_h, json={"lat": SITE[0] + 0.005, "lng": SITE[1]})
+
+    r = client.post("/reports", headers=rep_h, json={"description": TEXT, "lat": SITE[0], "lng": SITE[1]})
+    rid = r.json()["report"]["id"]
+    r = client.post(f"/reports/{rid}/confirm", headers=rep_h,
+                    json={"needs": [{"skill_id": p3k_id, "quota": 1}, {"skill_id": apar_id, "quota": 1}],
+                          "fields": {}})
+    assert r.status_code == 200, r.text
+
+    offers = offers_of(db, rid)
+    p3k_offer = next(o for o in offers if db.get(Need, o.need_id).skill_id == p3k_id)
+    assert p3k_offer.volunteer_id == multi_id  # only volunteer in range
+
+    a = dispatch.accept_offer(db, p3k_offer)
+    db.commit()
+
+    apar_need = db.scalar(select(Need).where(Need.report_id == rid, Need.skill_id == apar_id))
+    assert apar_need.status == "penuh"  # credited without a separate offer/alarm
+    assert dispatch.accepted_count(db, apar_need.id) == 1
+    db.expire_all()
+    assert sorted(db.get(Assignment, a.id).credited_skill_ids) == [apar_id]
+
+
 def test_no_candidates_is_visible_not_silent(client, db):
     rep_h, _ = signup(client, db, "081200000010")
     rid = create_active_report(client, rep_h, db, quota=3)

@@ -143,10 +143,12 @@ def apply_experience(db: Session, a: Assignment, disaster_type: str) -> None:
     if a.role == "utama":
         profile.completion_count += 1
         need = db.get(Need, a.need_id)
+        credited_ids = set(a.credited_skill_ids or [])
+        if need is not None:
+            credited_ids.add(need.skill_id)
         for s in profile.skills:
-            if s.skill_id == need.skill_id:
+            if s.skill_id in credited_ids:
                 s.verified_experience += 1
-                break
 
 
 def tick(db: Session, now: datetime | None = None) -> None:

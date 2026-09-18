@@ -185,8 +185,10 @@ def notify_nearby_users(db: Session, report: Report, cfg: Cfg, now: datetime) ->
 # Batches
 # ---------------------------------------------------------------------------
 def accepted_count(db: Session, need_id: str) -> int:
-    return db.scalar(select(func.count()).select_from(Assignment)
-                     .where(Assignment.need_id == need_id, Assignment.status != "dilepas")) or 0
+    need = db.get(Need, need_id)
+    assignments = db.scalars(select(Assignment).where(Assignment.report_id == need.report_id,
+                                                       Assignment.status != "dilepas")).all()
+    return sum(1 for a in assignments if a.need_id == need_id or need.skill_id in (a.credited_skill_ids or []))
 
 
 def remaining_need(db: Session, need: Need) -> int:
@@ -291,6 +293,7 @@ def accept_offer(db: Session, offer: Offer, now: datetime | None = None) -> Assi
     ensure_participant(db, report.id, offer.volunteer_id, "relawan")
     db.flush()
     refresh_need_status(db, need)
+    apply_cross_skill_credit(db, assignment, report)
 
     reporter = db.get(User, report.reporter_id)
     volunteer = db.get(User, offer.volunteer_id)
@@ -299,6 +302,31 @@ def accept_offer(db: Session, offer: Offer, now: datetime | None = None) -> Assi
            f"({'Bantuan Utama' if role == 'utama' else 'Bantuan Tambahan'}).",
            {"report_id": report.id})
     return assignment
+
+
+def apply_cross_skill_credit(db: Session, assignment: Assignment, report: Report) -> None:
+    """After one need's alarm is accepted, check whether the volunteer's other
+    skills also satisfy other still-open needs on the same report, and credit
+    them there too -- without a separate alarm/offer (design doc Part 2)."""
+    profile = db.get(VolunteerProfile, assignment.volunteer_id)
+    if profile is None:
+        return
+    my_skill_ids = {s.skill_id for s in profile.skills}
+    credited: list[int] = []
+    for need in report.needs:
+        if need.id == assignment.need_id or need.status == "selesai":
+            continue
+        if need.skill_id not in my_skill_ids:
+            continue
+        if remaining_need(db, need) <= 0:
+            continue
+        credited.append(need.skill_id)
+    if credited:
+        assignment.credited_skill_ids = credited
+        db.flush()
+        for need in report.needs:
+            if need.skill_id in credited:
+                refresh_need_status(db, need)
 
 
 def reject_offer(db: Session, offer: Offer, now: datetime | None = None) -> Offer:
