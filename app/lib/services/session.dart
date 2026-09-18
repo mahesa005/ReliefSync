@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api.dart';
+import 'push.dart';
 
 /// Logged-in user state. One account = base role (can always report); the
 /// volunteer layer is optional (`user['volunteer']` is null until activated).
@@ -91,6 +92,7 @@ class Session extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    await Push.unregister();
     await _clear();
     notifyListeners();
   }
