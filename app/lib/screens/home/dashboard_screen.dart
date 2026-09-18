@@ -11,6 +11,7 @@ import '../../services/location.dart';
 import '../../services/session.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/incident_icon.dart';
 import '../../widgets/map_tiles.dart';
 import '../../widgets/report_peek_sheet.dart';
 import '../map/map_screen.dart';
@@ -271,9 +272,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: Card(
         child: ListTile(
           onTap: () => showReportPeek(r['id'] as String).then((_) => _load()),
-          leading: const CircleAvatar(
+          leading: CircleAvatar(
             backgroundColor: AppColors.primarySoft,
-            child: Icon(Icons.local_fire_department_rounded, color: AppColors.primary),
+            child: Icon(incidentIcon(r['incident_type'] as String?), color: AppColors.primary),
           ),
           title: Text('${r['incident_label']} · ${km(r['distance_km'])}', style: const TextStyle(fontWeight: FontWeight.w800)),
           subtitle: Text('${r['sightings']} orang melihat · ${timeAgo(r['received_at'])}'),
@@ -389,7 +390,7 @@ class _MapPreviewState extends State<_MapPreview> {
                     point: pointOf(r),
                     width: 32,
                     height: 32,
-                    child: const MapDot(icon: Icons.local_fire_department_rounded, color: AppColors.primary, size: 32),
+                    child: MapDot(icon: incidentIcon(r['incident_type'] as String?), color: AppColors.primary, size: 32),
                   ),
               ]),
             ],
