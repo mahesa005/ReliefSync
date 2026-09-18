@@ -6,12 +6,14 @@ import 'screens/auth/login_screen.dart';
 import 'screens/home/dashboard_screen.dart';
 import 'services/alerts.dart';
 import 'services/location.dart';
+import 'services/push.dart';
 import 'services/session.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Push.init();
   final session = Session();
   final location = LocationService();
   await location.init();

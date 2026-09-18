@@ -7,7 +7,7 @@ pydantic-settings>=2.3
 python-multipart>=0.0.9
 pyjwt>=2.8
 httpx>=0.27               # also used for Groq AI extraction (optional at runtime: rule-based fallback without a key)
-# firebase-admin>=6.5     # optional: uncomment to send real FCM pushes (see README)
+firebase-admin>=6.5       # FCM pushes; inactive until FIREBASE_CREDENTIALS is set
 
 # --- dev / test ---
 pytest>=8.0

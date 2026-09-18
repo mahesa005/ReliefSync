@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The alarm sound is only referenced by name from Dart, so release-build
+     resource shrinking would otherwise strip it. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="@raw/alarm" />

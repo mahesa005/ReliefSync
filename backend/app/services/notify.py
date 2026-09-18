@@ -2,12 +2,18 @@
 it, so the demo works without Firebase). If FIREBASE_CREDENTIALS is set and
 ``firebase-admin`` is installed, it is also pushed through FCM:
 
-  * kind "alarm"    -> Android channel ``relief_alarm`` (custom sound, max priority)
-  * everything else -> channel ``relief_standard`` (default sound)            (NFR-7)
+  * kind "alarm"    -> Android: data-only, high priority. The app renders it
+                       itself (channel ``relief_alarm``) as a full-screen,
+                       insistent notification that rings until answered --
+                       a system-rendered ``notification`` payload can't do that.
+  * everything else -> ``notification`` payload on channel ``relief_standard``,
+                       rendered by the system with the default sound.     (NFR-7)
 
 Payloads never carry the reporter's unmasked phone number (NFR-14).
 """
+import json
 import logging
+from datetime import timedelta
 from functools import lru_cache
 
 from sqlalchemy.orm import Session
@@ -20,14 +26,17 @@ log = logging.getLogger("reliefsync.notify")
 
 @lru_cache
 def _firebase():
-    path = get_settings().firebase_credentials
-    if not path:
+    raw = get_settings().firebase_credentials.strip()
+    if not raw:
         return None
     try:
         import firebase_admin
         from firebase_admin import credentials, messaging
 
-        firebase_admin.initialize_app(credentials.Certificate(path))
+        # Either a path to the service-account JSON, or the JSON itself -- the
+        # latter is what hosts like Railway make easy (paste it into an env var).
+        source = json.loads(raw) if raw.startswith("{") else raw
+        firebase_admin.initialize_app(credentials.Certificate(source))
         return messaging
     except Exception as exc:  # noqa: BLE001
         log.warning("FCM disabled: %s", exc)
@@ -39,22 +48,32 @@ def _push(user: User, n: Notification) -> None:
     if messaging is None or not user.fcm_token:
         return
     alarm = n.kind == "alarm"
+    data = {k: str(v) for k, v in {**n.data, "kind": n.kind, "notification_id": n.id,
+                                    "title": n.title, "body": n.body}.items()}
+    aps = messaging.Aps(
+        alert=messaging.ApsAlert(title=n.title, body=n.body),
+        sound="alarm.caf" if alarm else "default",
+        category="RELIEF_ALARM" if alarm else "RELIEF_STANDARD",
+    )
+    if alarm:
+        # No `notification` block: Android must hand this to the app's background
+        # handler instead of rendering it itself. A stale alarm is useless once
+        # the batch window has passed, so don't deliver it late.
+        android = messaging.AndroidConfig(priority="high", ttl=timedelta(minutes=2))
+        notification = None
+    else:
+        android = messaging.AndroidConfig(
+            priority="high",
+            notification=messaging.AndroidNotification(channel_id="relief_standard", sound="default"),
+        )
+        notification = messaging.Notification(title=n.title, body=n.body)
     try:
         messaging.send(messaging.Message(
             token=user.fcm_token,
-            notification=messaging.Notification(title=n.title, body=n.body),
-            data={k: str(v) for k, v in {**n.data, "kind": n.kind, "notification_id": n.id}.items()},
-            android=messaging.AndroidConfig(
-                priority="high",
-                notification=messaging.AndroidNotification(
-                    channel_id="relief_alarm" if alarm else "relief_standard",
-                    sound="alarm" if alarm else "default",
-                ),
-            ),
-            apns=messaging.APNSConfig(payload=messaging.APNSPayload(aps=messaging.Aps(
-                sound="alarm.caf" if alarm else "default",
-                category="RELIEF_ALARM" if alarm else "RELIEF_STANDARD",
-            ))),
+            notification=notification,
+            data=data,
+            android=android,
+            apns=messaging.APNSConfig(headers={"apns-priority": "10"}, payload=messaging.APNSPayload(aps=aps)),
         ))
     except Exception as exc:  # noqa: BLE001 -- a failed push must never break the flow
         log.warning("FCM send failed for %s: %s", user.id, exc)
