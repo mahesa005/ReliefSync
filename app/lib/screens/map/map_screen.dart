@@ -66,6 +66,11 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final me = context.watch<LocationService>().current;
     final center = widget.focus ?? me ?? LocationService.demoCenter;
+    // Deliberately NOT re-centering on every `center` change here: this map
+    // is meant to be freely pannable/zoomable (unlike the dashboard preview),
+    // so auto-recentering on each GPS tick would fight the user's manual pan
+    // and make the map feel frozen. Recenter is user-triggered only, via the
+    // "my location" FAB below.
     return Scaffold(
       appBar: AppBar(title: Text(widget.trackReportId != null ? 'Pantau relawan' : 'Peta kejadian')),
       body: Stack(children: [
@@ -76,7 +81,7 @@ class _MapScreenState extends State<MapScreen> {
             initialZoom: 15,
             // Force the first tile fetch -- on web, tiles otherwise sit blank
             // until the first camera event (flutter_map known issue).
-            onMapReady: () => _map.move(center, 15),
+            onMapReady: () => kickTiles(_map, center, 15, mounted: () => mounted),
           ),
           children: [
             osmTiles,
