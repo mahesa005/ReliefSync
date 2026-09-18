@@ -30,6 +30,7 @@ class _MapScreenState extends State<MapScreen> {
   List<Json> _reports = [];
   List<Json> _volunteers = [];
   Timer? _timer;
+  LatLng? _lastCenter;
 
   @override
   void initState() {
@@ -66,6 +67,15 @@ class _MapScreenState extends State<MapScreen> {
   Widget build(BuildContext context) {
     final me = context.watch<LocationService>().current;
     final center = widget.focus ?? me ?? LocationService.demoCenter;
+    // Nudge the camera instead of relying on a rebuild when the location
+    // updates -- flutter_map only fetches tiles after a camera event, so a
+    // moved center that never triggers one would leave tiles blank.
+    if (_lastCenter != null && _lastCenter != center) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _map.move(center, _map.camera.zoom);
+      });
+    }
+    _lastCenter = center;
     return Scaffold(
       appBar: AppBar(title: Text(widget.trackReportId != null ? 'Pantau relawan' : 'Peta kejadian')),
       body: Stack(children: [

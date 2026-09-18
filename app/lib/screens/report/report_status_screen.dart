@@ -324,6 +324,7 @@ class _LiveMap extends StatefulWidget {
 
 class _LiveMapState extends State<_LiveMap> {
   final _map = MapController();
+  LatLng? _lastSite;
 
   @override
   Widget build(BuildContext context) {
@@ -331,6 +332,16 @@ class _LiveMapState extends State<_LiveMap> {
     final volunteers = widget.volunteers;
     final onTap = widget.onTap;
     final site = pointOf(report);
+    // Nudge the camera instead of relying on a rebuild when the polled report
+    // location changes -- flutter_map only fetches tiles after a camera
+    // event, so a moved center that never triggers one would leave tiles
+    // blank (see the dashboard's _MapPreview for the same fix).
+    if (_lastSite != null && _lastSite != site) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _map.move(site, _map.camera.zoom);
+      });
+    }
+    _lastSite = site;
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: SizedBox(
