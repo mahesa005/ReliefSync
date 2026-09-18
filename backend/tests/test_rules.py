@@ -3,11 +3,9 @@ import asyncio
 
 import pytest
 
-from app.core.app_config import DEFAULTS
 from app.core.config import get_settings
 from app.services import extraction
 from app.services.confirmation import threshold_proportional, threshold_simple
-from app.services.needs import map_needs
 
 # Section 4.13 reference table, N -> threshold (1..100)
 TABLE = """
@@ -37,11 +35,6 @@ def test_simple_quorum():
 
 REPORT = ("Tolong! Kebakaran rumah di Gang Mawar RT 05, api merambat ke rumah sebelah. "
           "Ada lansia terjebak di lantai 2. Gang sempit, mobil damkar susah masuk.")
-
-
-def test_need_mapping_for_fire():
-    cats = [n["category"] for n in map_needs(REPORT, "kebakaran", DEFAULTS["need_catalog"])]
-    assert cats == ["pemadaman_awal", "evakuasi", "akses"]
 
 
 def test_rule_based_extraction_has_real_evidence():

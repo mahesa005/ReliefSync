@@ -24,8 +24,8 @@ from ..db.models import (
 )
 from ..db.session import get_db
 from ..services import agencies, confirmation, dispatch, extraction, storage
+from ..services import skills as skills_service
 from ..services.geo import haversine_km
-from ..services.needs import map_needs
 from ..services.trust import trust_payload
 from .deps import current_user, engine_lock, iso
 
@@ -56,7 +56,7 @@ class ReportIn(BaseModel):
 
 
 class NeedIn(BaseModel):
-    category: str
+    skill_id: int
     quota: int = Field(ge=1, le=50)
 
 
@@ -81,10 +81,6 @@ class OfficialIn(BaseModel):
 # ---------------------------------------------------------------------------
 # Views
 # ---------------------------------------------------------------------------
-def _need_label(cfg: Cfg, category: str) -> str:
-    return cfg["need_catalog"].get(category, {}).get("label", category)
-
-
 def extraction_view(report: Report) -> list[dict]:
     return [{"field": e.field_name, "label": extraction.FIELD_LABELS.get(e.field_name, e.field_name),
              "value": e.value, "ai_value": e.ai_value, "evidence": e.evidence, "confidence": e.confidence,
@@ -97,7 +93,7 @@ def needs_view(db: Session, report: Report, cfg: Cfg) -> list[dict]:
         contacted = db.scalar(select(func.count()).select_from(Offer)
                               .where(Offer.need_id == n.id, Offer.status == "pending")) or 0
         out.append({
-            "id": n.id, "category": n.category, "label": _need_label(cfg, n.category), "skill": n.skill,
+            "id": n.id, "skill_id": n.skill_id, "skill_name": n.skill.name,
             "quota": n.quota, "accepted": dispatch.accepted_count(db, n.id), "status": n.status,
             "exhausted": n.exhausted, "contacted": contacted, "current_batch": n.current_batch,
         })
@@ -113,7 +109,7 @@ def volunteers_view(db: Session, report: Report) -> list[dict]:
     ).all()
     return [{
         "assignment_id": a.id, "name": u.name, "role": a.role, "order_number": a.order_number,
-        "skill": need.skill, "travel_status": a.travel_status, "status": a.status,
+        "skill": need.skill.name, "travel_status": a.travel_status, "status": a.status,
         "distance_km": round(haversine_km(u.lat, u.lng, report.lat, report.lng), 2) if u.lat is not None else None,
         "lat": u.lat, "lng": u.lng, "location_updated_at": iso(u.location_updated_at),
         "accepted_at": iso(a.accepted_at), "is_simulated": u.is_simulated,
@@ -233,12 +229,10 @@ async def create_report(body: ReportIn, user: User = Depends(current_user), db: 
                       "confidence": 1.0 if v.strip() else 0.0} for k, v in s.items()}
         source, elapsed, note = "form", 0, "Diisi langsung lewat formulir."
         incident_type = extraction._incident_type_from(s["jenis_kejadian"])
-        text_for_rules = " ".join(s.values())
     else:
         result = await extraction.extract(text)
         fields, source, elapsed, note = result.fields, result.source, result.elapsed_ms, result.note
         incident_type = result.incident_type
-        text_for_rules = f"{text} {fields['kebutuhan_dinyatakan']['value']} {fields['kondisi_akses']['value']}"
 
     report.incident_type = incident_type
     report.extraction_source, report.extraction_ms, report.extraction_note = source, elapsed, note
@@ -248,17 +242,15 @@ async def create_report(body: ReportIn, user: User = Depends(current_user), db: 
                                 evidence=f["evidence"], confidence=f["confidence"]))
     db.commit()
     db.refresh(report)
-    cfg = Cfg(db)
     return {
         "report": report_view(db, report, user),
-        "proposed_needs": map_needs(text_for_rules, incident_type, cfg["need_catalog"]),  # FR-4.1
-        "catalog": catalog_payload(cfg),
+        "proposed_needs": [],  # manual selection only until Task 4 wires the new extraction contract
+        "catalog": catalog_payload(db),
     }
 
 
-def catalog_payload(cfg: Cfg) -> list[dict]:
-    return [{"category": k, "label": v["label"], "skill": v["skill"], "quota": v["quota"]}
-            for k, v in cfg["need_catalog"].items()]
+def catalog_payload(db: Session) -> list[dict]:
+    return [{"skill_id": s.id, "name": s.name} for s in skills_service.list_skills(db)]
 
 
 @router.post("/reports/{report_id}/confirm")
@@ -270,16 +262,15 @@ def confirm_report(report_id: str, body: ConfirmIn, user: User = Depends(current
         raise HTTPException(403, "Hanya pelapor yang dapat mengonfirmasi laporan ini.")
     if report.status != "draft":
         raise HTTPException(409, "Laporan sudah dikonfirmasi.")
-    cfg = Cfg(db)
-    catalog = cfg["need_catalog"]
+    valid_skill_ids = {s.id for s in skills_service.list_skills(db)}
     specs, seen = [], set()
     for n in body.needs:
-        if n.category not in catalog:
-            raise HTTPException(422, f"Kategori kebutuhan tidak dikenal: {n.category}")
-        if n.category in seen:
+        if n.skill_id not in valid_skill_ids:
+            raise HTTPException(422, f"Skill tidak dikenal: {n.skill_id}")
+        if n.skill_id in seen:
             continue
-        seen.add(n.category)
-        specs.append({"category": n.category, "skill": catalog[n.category]["skill"], "quota": n.quota})
+        seen.add(n.skill_id)
+        specs.append({"skill_id": n.skill_id, "quota": n.quota})
     if not specs:
         raise HTTPException(422, "Pilih minimal satu kebutuhan.")
     for e in report.extractions:
@@ -302,13 +293,12 @@ def confirm_report(report_id: str, body: ConfirmIn, user: User = Depends(current
 def my_reports(user: User = Depends(current_user), db: Session = Depends(get_db)):
     reports = db.scalars(select(Report).where(Report.reporter_id == user.id, Report.status != "draft")
                          .order_by(Report.received_at.desc()).limit(50)).all()
-    cfg = Cfg(db)
     return [{
         "id": r.id, "status": r.status, "incident_label": dispatch.incident_label(r),
         "address_text": r.address_text, "received_at": iso(r.received_at), "raw_text": r.raw_text[:140],
         "needs_total": sum(n.quota for n in r.needs),
         "accepted_total": sum(dispatch.accepted_count(db, n.id) for n in r.needs),
-        "needs": [{"label": _need_label(cfg, n.category), "status": n.status} for n in r.needs],
+        "needs": [{"label": n.skill.name, "status": n.status} for n in r.needs],
     } for r in reports]
 
 
@@ -478,4 +468,4 @@ def suggest_agencies(report_id: str | None = None, lat: float | None = None, lng
 
 @router.get("/needs/catalog")
 def needs_catalog(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    return catalog_payload(Cfg(db))
+    return catalog_payload(db)

@@ -14,6 +14,7 @@ from ..db.models import (
     Notification,
     Participant,
     Report,
+    Skill,
     User,
     VolunteerProfile,
     VolunteerSkill,
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/me", tags=["me"])
 
 
 class SkillIn(BaseModel):
-    skill: str = Field(min_length=1, max_length=60)
+    skill_id: int
     evidence: Literal["self_declared", "certified"] = "self_declared"
 
 
@@ -69,7 +70,7 @@ def volunteer_stats(db: Session, user: User) -> dict:
     per_skill: dict[str, int] = {}
     finished = not_afk = 0
     for a, need in rows:
-        per_skill[need.skill] = per_skill.get(need.skill, 0) + 1
+        per_skill[need.skill.name] = per_skill.get(need.skill.name, 0) + 1
         if a.status == "selesai":
             finished += 1
             p = db.scalar(select(Participant).where(Participant.report_id == a.report_id,
@@ -98,8 +99,8 @@ def user_payload(db: Session, user: User) -> dict:
         "created_at": iso(user.created_at),
         "volunteer": None if v is None else {
             "is_active": v.is_active,
-            "skills": [{"skill": s.skill, "evidence": s.evidence, "verified_experience": s.verified_experience}
-                       for s in v.skills],
+            "skills": [{"skill_id": s.skill_id, "skill": s.skill.name, "evidence": s.evidence,
+                       "verified_experience": s.verified_experience} for s in v.skills],
             "completion_count": v.completion_count,
             "disaster_experience": v.disaster_experience or {},
             "stats": volunteer_stats(db, user),
@@ -124,21 +125,25 @@ def patch_me(body: ProfilePatch, user: User = Depends(current_user), db: Session
 def upsert_volunteer(body: VolunteerIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Activate the volunteer layer or replace its skill list (FR-1.3 / FR-1.4).
     Experience already earned on a skill is kept when the skill stays."""
-    wanted = {s.skill.strip(): s for s in body.skills if s.skill.strip()}
+    wanted = {s.skill_id: s for s in body.skills}
     if not wanted:
         raise HTTPException(422, "Tambahkan minimal satu kemampuan.")
+    valid_skill_ids = {row.id for row in db.scalars(select(Skill))}
+    unknown = set(wanted) - valid_skill_ids
+    if unknown:
+        raise HTTPException(422, f"Skill tidak dikenal: {sorted(unknown)}")
     profile = user.volunteer
     if profile is None:
         profile = VolunteerProfile(user_id=user.id, is_active=body.is_active)
         db.add(profile)
         db.flush()
         db.refresh(user)
-    existing = {s.skill.lower(): s for s in profile.skills}
+    existing = {s.skill_id: s for s in profile.skills}
     keep = []
-    for name, s in wanted.items():
-        row = existing.get(name.lower())
+    for skill_id, s in wanted.items():
+        row = existing.get(skill_id)
         if row is None:
-            row = VolunteerSkill(user_id=user.id, skill=name, evidence=s.evidence)
+            row = VolunteerSkill(user_id=user.id, skill_id=skill_id, evidence=s.evidence)
         else:
             row.evidence = s.evidence
         keep.append(row)

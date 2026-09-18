@@ -91,15 +91,16 @@ class VolunteerProfile(Base):
 
 class VolunteerSkill(Base):
     __tablename__ = "volunteer_skills"
-    __table_args__ = (UniqueConstraint("user_id", "skill"),)
+    __table_args__ = (UniqueConstraint("user_id", "skill_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("volunteer_profiles.user_id"), index=True)
-    skill: Mapped[str] = mapped_column(String(60))
+    skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id"), index=True)
     evidence: Mapped[str] = mapped_column(String(20), default="self_declared")  # or "certified"
     verified_experience: Mapped[int] = mapped_column(Integer, default=0)  # per skill (4.2)
 
     profile: Mapped[VolunteerProfile] = relationship(back_populates="skills")
+    skill: Mapped[Skill] = relationship()
 
 
 # --------------------------------------------------------------------------
@@ -168,8 +169,7 @@ class Need(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     report_id: Mapped[str] = mapped_column(ForeignKey("reports.id"), index=True)
-    category: Mapped[str] = mapped_column(String(40))
-    skill: Mapped[str] = mapped_column(String(60))  # Required Skill for SkillMatch
+    skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id"), index=True)  # Required Skill for SkillMatch
     quota: Mapped[int] = mapped_column(Integer)  # Required Need (FR-4.3)
     # belum_ada | sebagian | penuh | selesai (FR-8.1)
     status: Mapped[str] = mapped_column(String(20), default="belum_ada")
@@ -179,6 +179,7 @@ class Need(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     report: Mapped[Report] = relationship(back_populates="needs")
+    skill: Mapped[Skill] = relationship()
 
 
 class Offer(Base):

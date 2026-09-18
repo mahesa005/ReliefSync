@@ -24,6 +24,7 @@ from ..db.models import (
     Offer,
     Participant,
     Report,
+    Skill,
     User,
     VolunteerProfile,
     VolunteerSkill,
@@ -42,13 +43,11 @@ SIM_NAMES = [
     "Siti Nurhaliza", "Taufik Hidayat", "Umi Kalsum", "Vina Oktavia", "Wahyu Setiawan", "Yusuf Ibrahim",
     "Zahra Aulia", "Agus Salim", "Bayu Aji", "Dimas Aditya", "Fitri Handayani", "Galih Prakoso",
 ]
-SKILLS = ["Pemadaman Api", "Evakuasi", "P3K", "Logistik", "Pengaturan Lalu Lintas", "Dukungan Psikososial"]
 DEMO_PASSWORD = "demo1234"
 DEMO_ACCOUNTS = [
-    # phone, name, volunteer skills (None = reporter only)
+    # phone, name, volunteer skill names (None = reporter only) -- resolved to skill_id in seed_demo
     ("081200000001", "Demo Pelapor", None),
-    ("081200000002", "Demo Relawan", [("Evakuasi", "certified", 2), ("P3K", "self_declared", 1),
-                                      ("Pemadaman Api", "self_declared", 0)]),
+    ("081200000002", "Demo Relawan", ["Teknik memindahkan korban", "P3K", "Penggunaan APAR"]),
 ]
 
 
@@ -69,6 +68,10 @@ def _sim_offset(user_id: str) -> tuple[float, float]:
 def seed_demo(db: Session) -> None:
     if db.scalar(select(User).where(User.is_simulated.is_(True)).limit(1)) is not None:
         return
+    skill_by_name = {s.name: s.id for s in db.scalars(select(Skill))}
+    skill_ids = list(skill_by_name.values())
+    if not skill_ids:
+        raise RuntimeError("Skill catalog must be seeded before demo volunteers (call skills.seed_skills first).")
     rng = random.Random(2026)
     now = utcnow()
     for i, name in enumerate(SIM_NAMES):
@@ -88,23 +91,24 @@ def seed_demo(db: Session) -> None:
             disaster_experience={"kebakaran": rng.choice([0, 0, 1, 2, 4])},
         )
         db.add(profile)
-        for skill in rng.sample(SKILLS, rng.randint(1, 3)):
-            db.add(VolunteerSkill(user_id=user.id, skill=skill,
+        for skill_id in rng.sample(skill_ids, min(rng.randint(1, 3), len(skill_ids))):
+            db.add(VolunteerSkill(user_id=user.id, skill_id=skill_id,
                                   evidence="certified" if rng.random() < 0.35 else "self_declared",
                                   verified_experience=rng.choice([0, 0, 1, 2, 3, 6])))
 
-    for phone, name, skills in DEMO_ACCOUNTS:
+    for phone, name, skill_names in DEMO_ACCOUNTS:
         if db.scalar(select(User).where(User.phone == phone)) is not None:
             continue
-        lat, lng = offset_point(*DEMO_CENTER, 0.8, 45 if skills else 200)
+        lat, lng = offset_point(*DEMO_CENTER, 0.8, 45 if skill_names else 200)
         user = User(name=name, phone=phone, password_hash=hash_password(DEMO_PASSWORD), phone_verified=True,
                     lat=lat, lng=lng, location_updated_at=now)
         db.add(user)
         db.flush()
-        if skills:
+        if skill_names:
             db.add(VolunteerProfile(user_id=user.id, is_active=True, available_since=now))
-            for skill, evidence, ve in skills:
-                db.add(VolunteerSkill(user_id=user.id, skill=skill, evidence=evidence, verified_experience=ve))
+            for skill_name in skill_names:
+                db.add(VolunteerSkill(user_id=user.id, skill_id=skill_by_name[skill_name],
+                                      evidence="certified", verified_experience=2))
     db.commit()
 
 

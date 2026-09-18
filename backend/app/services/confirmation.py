@@ -144,7 +144,7 @@ def apply_experience(db: Session, a: Assignment, disaster_type: str) -> None:
         profile.completion_count += 1
         need = db.get(Need, a.need_id)
         for s in profile.skills:
-            if s.skill.lower() == need.skill.lower():
+            if s.skill_id == need.skill_id:
                 s.verified_experience += 1
                 break
 

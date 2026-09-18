@@ -71,8 +71,8 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
         user.password_hash = hash_password(body.password)
     if body.become_volunteer and user.volunteer is None:
         db.add(VolunteerProfile(user_id=user.id, is_active=True))
-        for s in {s.skill.strip(): s for s in body.skills if s.skill.strip()}.values():
-            db.add(VolunteerSkill(user_id=user.id, skill=s.skill.strip(), evidence=s.evidence))
+        for s in {s.skill_id: s for s in body.skills}.values():
+            db.add(VolunteerSkill(user_id=user.id, skill_id=s.skill_id, evidence=s.evidence))
     out = _issue_otp(user)
     db.commit()
     return out

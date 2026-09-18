@@ -26,16 +26,6 @@ DEFAULTS: dict[str, object] = {
     "response_window_seconds": 300,
     "escalate_on_all_reject": True,  # FR-5.10
 
-    # --- Needs (FR-4.3, Open Item #3) ---------------------------------------
-    "need_catalog": {
-        "pemadaman_awal": {"label": "Pemadaman Api Awal", "skill": "Pemadaman Api", "quota": 3},
-        "evakuasi": {"label": "Evakuasi Warga", "skill": "Evakuasi", "quota": 3},
-        "medis": {"label": "Pertolongan Pertama", "skill": "P3K", "quota": 2},
-        "logistik": {"label": "Logistik & Pengungsian", "skill": "Logistik", "quota": 2},
-        "akses": {"label": "Pengaturan Akses & Lalu Lintas", "skill": "Pengaturan Lalu Lintas", "quota": 2},
-        "psikososial": {"label": "Dukungan Psikososial", "skill": "Dukungan Psikososial", "quota": 1},
-    },
-
     # --- Collective confirmation (4.13 / 5.11, Open Item #2) ---------------
     # "proportional" = T(N) table of Section 4.13; "simple" = 5.11 (3 people / 50%).
     "quorum_mode": "proportional",

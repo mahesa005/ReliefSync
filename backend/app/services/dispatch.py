@@ -77,7 +77,7 @@ def volunteer_inputs(db: Session) -> list[matching.VolunteerInput]:
             lat=user.lat,
             lng=user.lng,
             is_active=profile.is_active,
-            skills={s.skill: (s.evidence, s.verified_experience) for s in profile.skills},
+            skills={s.skill_id: (s.evidence, s.verified_experience) for s in profile.skills},
             completion_count=profile.completion_count,
             disaster_experience=dict(profile.disaster_experience or {}),
             selection_count=profile.selection_count,
@@ -91,7 +91,7 @@ def rank_for_need(db: Session, need: Need, report: Report, cfg: Cfg,
                   volunteers: list[matching.VolunteerInput] | None = None) -> list[matching.Candidate]:
     return matching.rank_candidates(
         volunteers if volunteers is not None else volunteer_inputs(db),
-        need.skill, report.incident_type, report.lat, report.lng, cfg,
+        need.skill_id, report.incident_type, report.lat, report.lng, cfg,
         exclude_user_ids={report.reporter_id},
     )
 
@@ -130,7 +130,7 @@ def activate_report(db: Session, report: Report, needs_spec: list[dict], now: da
     users_by_id = {u.id: u for u in db.scalars(select(User).where(User.id.in_([v.user_id for v in volunteers])))}
     notified: set[str] = set()
     for spec in needs_spec:
-        need = Need(report_id=report.id, category=spec["category"], skill=spec["skill"],
+        need = Need(report_id=report.id, skill_id=spec["skill_id"],
                     quota=max(1, int(spec["quota"])), created_at=now)
         db.add(need)
         db.flush()
@@ -229,13 +229,12 @@ def activate_next_batch(db: Session, need: Need, report: Report, cfg: Cfg, now: 
 
 def _send_offer_notification(db: Session, offer: Offer, need: Need, report: Report, cfg: Cfg, user: User,
                              alarm: bool, trust: dict) -> None:
-    catalog = cfg["need_catalog"]
-    need_label = catalog.get(need.category, {}).get("label", need.category)
+    need_label = need.skill.name
     title = ("🚨 ALARM: " if alarm else "") + f"{incident_label(report)} {offer.distance_km:.1f} km dari Anda"
-    body = f"Dibutuhkan: {need_label} (skill {need.skill}). Pelapor: {trust['label']}."
+    body = f"Dibutuhkan: {need_label}. Pelapor: {trust['label']}."
     notify(db, user, "alarm" if alarm else "standard", title, body, {
         "report_id": report.id, "need_id": need.id, "offer_id": offer.id,
-        "distance_km": offer.distance_km, "skill": need.skill, "need_label": need_label,
+        "distance_km": offer.distance_km, "skill_id": need.skill_id, "skill": need_label,
         "trust_tier": trust["tier"], "trust_label": trust["label"],
         "alarm_seconds": int(cfg["alarm_seconds"]) if alarm else 0,
     })
@@ -296,7 +295,8 @@ def accept_offer(db: Session, offer: Offer, now: datetime | None = None) -> Assi
     reporter = db.get(User, report.reporter_id)
     volunteer = db.get(User, offer.volunteer_id)
     notify(db, reporter, "info", f"{volunteer.name} menuju lokasi",
-           f"Relawan ke-{order} untuk {need.skill} ({'Bantuan Utama' if role == 'utama' else 'Bantuan Tambahan'}).",
+           f"Relawan ke-{order} untuk {need.skill.name} "
+           f"({'Bantuan Utama' if role == 'utama' else 'Bantuan Tambahan'}).",
            {"report_id": report.id})
     return assignment
 
@@ -326,11 +326,11 @@ def participate(db: Session, report: Report, user: User, now: datetime | None = 
     if offers:
         return accept_offer(db, offers[0], now)
 
-    skills = {s.skill.lower() for s in user.volunteer.skills}
+    skills = {s.skill_id for s in user.volunteer.skills}
     needs = [n for n in report.needs if n.status != "selesai"]
     if not needs:
         raise DispatchError("Laporan ini tidak memiliki kebutuhan terbuka.")
-    needs.sort(key=lambda n: (n.skill.lower() not in skills, -remaining_need(db, n)))
+    needs.sort(key=lambda n: (n.skill_id not in skills, -remaining_need(db, n)))
     need = needs[0]
     d = haversine_km(user.lat, user.lng, report.lat, report.lng) if user.lat is not None else 0.0
     last_rank = db.scalar(select(func.max(Offer.rank)).where(Offer.need_id == need.id)) or 0
