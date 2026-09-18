@@ -95,7 +95,9 @@ class VoteIn(BaseModel):
 
 class AccuracyIn(BaseModel):
     matches: bool
-    verdict: Literal["valid", "hoax"]
+    # Temporary default until the Flutter hoax/valid UI ships (tracked as a follow-up,
+    # not part of this branch) -- the currently-shipped client never sends this field.
+    verdict: Literal["valid", "hoax"] = "valid"
 
 
 class OfficialIn(BaseModel):
