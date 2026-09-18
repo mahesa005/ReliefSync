@@ -141,6 +141,8 @@ async def _llm_extract(text: str, skills: list[Skill]) -> dict:
                 ],
             },
         )
+        if resp.status_code >= 400:
+            log.warning("Groq request failed (%s): %s", resp.status_code, resp.text[:2000])
         resp.raise_for_status()
         data = resp.json()
 
