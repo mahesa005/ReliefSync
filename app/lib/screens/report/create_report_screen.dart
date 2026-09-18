@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/api.dart';
+import '../../services/incident_types.dart';
 import '../../services/location.dart';
 import '../../theme.dart';
 import '../../widgets/agency_sheet.dart';
@@ -28,9 +29,11 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final _formLocation = TextEditingController();
   final _formAccess = TextEditingController();
   final _formNeeds = TextEditingController();
+  final _formOtherIncident = TextEditingController();
 
   bool _formMode = false;
-  String _incident = 'kebakaran permukiman';
+  List<Json> _incidentTypes = [];
+  String? _incident; // incident type code, picked in the form
   LatLng? _location;
   bool _manualLocation = false;
   bool _locating = false;
@@ -41,11 +44,24 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   void initState() {
     super.initState();
     _useGps();
+    _loadIncidentTypes();
+  }
+
+  bool _typesLoading = true;
+
+  Future<void> _loadIncidentTypes() async {
+    final types = await loadIncidentTypes();
+    if (mounted) {
+      setState(() {
+        _incidentTypes = types;
+        _typesLoading = false;
+      });
+    }
   }
 
   @override
   void dispose() {
-    for (final c in [_text, _address, _contact, _formLocation, _formAccess, _formNeeds]) {
+    for (final c in [_text, _address, _contact, _formLocation, _formAccess, _formNeeds, _formOtherIncident]) {
       c.dispose();
     }
     super.dispose();
@@ -92,15 +108,18 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
-  /// The backend's form schema is just {title, description} and it infers the
-  /// incident type from keywords in the description, so the chosen type goes
-  /// into the description too -- otherwise it would default to "kebakaran".
+  /// "Lainnya" reports are labelled by their title, so the typed incident name
+  /// leads the title.
   Json _structuredBody() {
     final location = _formLocation.text.trim();
     final access = _formAccess.text.trim();
     final needs = _formNeeds.text.trim();
-    final incident = _incident[0].toUpperCase() + _incident.substring(1);
+    final name = _incident == kOtherIncident
+        ? _formOtherIncident.text.trim()
+        : _incidentTypes.firstWhere((t) => t['code'] == _incident)['label'] as String;
+    final incident = name[0].toUpperCase() + name.substring(1);
     return {
+      'incident_type': _incident,
       'title': location.isEmpty ? incident : '$incident di $location',
       'description': [
         'Jenis kejadian: $incident.',
@@ -118,6 +137,14 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
     if (!_formMode && _text.text.trim().length < 5) {
       showMessage('Ceritakan kejadiannya minimal satu kalimat, atau pakai formulir.', error: true);
+      return;
+    }
+    if (_formMode && _incident == null) {
+      showMessage('Pilih jenis kejadian.', error: true);
+      return;
+    }
+    if (_formMode && _incident == kOtherIncident && _formOtherIncident.text.trim().isEmpty) {
+      showMessage('Tuliskan jenis kejadiannya.', error: true);
       return;
     }
     final body = <String, dynamic>{
@@ -222,17 +249,40 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
       ];
 
   List<Widget> _structuredMode() => [
-        DropdownButtonFormField<String>(
-          initialValue: _incident,
-          decoration: const InputDecoration(labelText: 'Jenis kejadian'),
-          items: const [
-            DropdownMenuItem(value: 'kebakaran permukiman', child: Text('Kebakaran permukiman')),
-            DropdownMenuItem(value: 'banjir', child: Text('Banjir')),
-            DropdownMenuItem(value: 'tanah longsor', child: Text('Tanah longsor')),
-            DropdownMenuItem(value: 'gempa bumi', child: Text('Gempa bumi')),
-          ],
-          onChanged: (v) => setState(() => _incident = v ?? _incident),
-        ),
+        if (_typesLoading)
+          const LinearProgressIndicator()
+        else if (_incidentTypes.isEmpty)
+          Row(children: [
+            const Expanded(
+              child: Text('Daftar jenis kejadian gagal dimuat.', style: TextStyle(color: AppColors.inkMuted)),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() => _typesLoading = true);
+                _loadIncidentTypes();
+              },
+              child: const Text('Coba lagi'),
+            ),
+          ])
+        else
+          DropdownButtonFormField<String>(
+            initialValue: _incident,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Jenis kejadian'),
+            items: [
+              for (final t in _incidentTypes)
+                DropdownMenuItem(value: t['code'] as String, child: Text(t['label'] as String)),
+            ],
+            onChanged: (v) => setState(() => _incident = v),
+          ),
+        if (_incident == kOtherIncident) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: _formOtherIncident,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Sebutkan kejadiannya', hintText: 'mis. anak hilang, orang tenggelam'),
+          ),
+        ],
         const SizedBox(height: 12),
         TextField(
           controller: _formLocation,
