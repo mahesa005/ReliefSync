@@ -44,7 +44,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 | Akun | Nomor HP | Kata sandi |
 |---|---|---|
 | Demo Pelapor | `081200000001` | `demo1234` |
-| Demo Relawan (Evakuasi, P3K, Pemadaman Api) | `081200000002` | `demo1234` |
+| Demo Relawan (Teknik memindahkan korban, P3K, Penggunaan APAR) | `081200000002` | `demo1234` |
 
 Relawan simulasi menjawab alarm sendiri (menerima ±70%), bergerak ke lokasi, lalu ikut
 mengonfirmasi "sudah teratasi", sehingga seluruh alur terlihat hidup dari satu HP.
@@ -128,7 +128,7 @@ Dokumen konteks menyisakan beberapa hal terbuka. Implementasi memilih nilai defa
 | #2 Mekanisme kuorum (4.13 vs 5.11) | Default `quorum_mode = "proportional"` (tabel T(N) Section 4.13), dihitung atas partisipan **aktif** (non-AFK) sesuai 5.11, minimal 2 sumber berbeda (FR-7.2). Mode `"simple"` (3 orang / 50%) tersedia. |
 | #14 Ukuran batch (FR-5.5 vs 4.10) | Section 4.10: Batch 1 = Required Need, Batch 2 = sisa kebutuhan, Batch 3+ = sisa × 2^k. Semua kandidat lain langsung mendapat notifikasi standar dan bisa menerima proaktif (FR-5.7/5.8). |
 | FR-5.11 vs 4.11 (peran) | Aturan 4.11: menerima ≤5 mnt sejak alarm sendiri → Utama; setelah 5 mnt / pernah menolak → Tambahan. Penerima pertama = "relawan ke-1". Semua penerima aktif mengisi kuota. |
-| #3 Kuota per kebutuhan | Pemadaman api 3, evakuasi 3, P3K 2, logistik 2, akses 2, psikososial 1 (dari katalog `skills` table). |
+| #3 Kuota per kebutuhan | Estimasi LLM per skill saat ekstraksi laporan; fallback manual jika ada timeout. Bukan nilai tetap per kategori. |
 | #4 Data instansi | Daftar kurasi: Jakarta Siaga 112 (khusus DKI), Damkar 113, 112 nasional, Ambulans 119, Basarnas 115, Polisi 110. |
 | #5 Akses kontak instansi | Pelapor (sejak mengisi laporan) dan relawan yang terlibat, kapan saja. |
 | #8 / #9 Ambang skor / top-X | Ambang 0 (hanya hard filter), maksimal 50 kandidat. |
