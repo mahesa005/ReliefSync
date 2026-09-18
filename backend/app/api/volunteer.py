@@ -13,6 +13,7 @@ from ..db.session import get_db
 from ..services import agencies, confirmation, dispatch
 from ..services.geo import haversine_km
 from ..services.trust import trust_payload
+from ..services.verifier_trust import verifier_payload
 from .deps import current_user, engine_lock, iso
 
 router = APIRouter(tags=["volunteer"])
@@ -51,6 +52,7 @@ def offer_view(db: Session, offer: Offer, cfg: Cfg) -> dict:
                  "quota": need.quota, "accepted": dispatch.accepted_count(db, need.id), "status": need.status},
         "matched_skill": need.skill.name,
         "reporter_trust": trust_payload(db, report.reporter_id, cfg),  # FR-9.3
+        "reporter_verifier_trust": verifier_payload(db, report.reporter_id),
         "contact_phone_masked": mask_phone(report.contact_phone),
         "is_alarm": offer.batch_number is not None,
         "alarm_active": alarm_active,
@@ -150,6 +152,7 @@ def task_view(db: Session, a: Assignment, user: User) -> dict:
         if user.lat is not None else None,
         "contact_phone_masked": mask_phone(report.contact_phone),
         "reporter_trust": trust_payload(db, report.reporter_id, cfg),
+        "reporter_verifier_trust": verifier_payload(db, report.reporter_id),
         "quorum": confirmation.quorum_state(db, report, cfg),
         "my_vote_done": _voted(db, report, user),
         "prompt_pending": confirmation.pending_prompt(db, report, user.id),

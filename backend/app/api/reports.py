@@ -28,6 +28,7 @@ from ..services import skills as skills_service
 from ..services.extraction import MAX_QUOTA
 from ..services.geo import haversine_km
 from ..services.trust import trust_payload
+from ..services.verifier_trust import verifier_payload
 from .deps import current_user, engine_lock, iso
 
 router = APIRouter(tags=["reports"])
@@ -172,6 +173,7 @@ def report_view(db: Session, report: Report, viewer: User) -> dict:
         "resolved_by": report.resolved_by,
         "photo_urls": report.photo_urls or [],
         "reporter_trust": trust_payload(db, report.reporter_id, cfg),
+        "reporter_verifier_trust": verifier_payload(db, report.reporter_id),
         "is_reporter": is_reporter,
         "needs": needs,
         "needs_total": sum(n["quota"] for n in needs),

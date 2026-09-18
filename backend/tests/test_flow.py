@@ -91,6 +91,7 @@ def test_register_login_and_otp(client):
     assert me["phone_masked"] == "0812****2222"
     assert me["volunteer"] is None
     assert me["trust"]["label"] == "Akun baru"
+    assert me["verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
 
 
 def test_report_requires_account(client):
@@ -330,10 +331,12 @@ def test_volunteer_api_accept_and_task(client, db):
     reqs = client.get("/volunteer/requests", headers=vol_h).json()
     assert len(reqs) == 1 and reqs[0]["alarm_active"] is True
     assert reqs[0]["reporter_trust"]["label"] == "Akun baru"  # FR-9.3
+    assert reqs[0]["reporter_verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
     assert "08" in reqs[0]["contact_phone_masked"] and "*" in reqs[0]["contact_phone_masked"]
 
     task = client.post(f"/offers/{reqs[0]['offer_id']}/accept", headers=vol_h).json()
     assert task["role"] == "utama" and task["order_number"] == 1
+    assert task["reporter_verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
     task = client.post(f"/assignments/{task['id']}/travel-status", headers=vol_h, json={"status": "sampai"}).json()
     assert task["travel_status"] == "sampai"
 
@@ -363,6 +366,7 @@ def test_sighting_and_nearby_widget(client, db):
     assert [r["id"] for r in nearby["notified"]] == [rid]
     view = client.post(f"/reports/{rid}/sightings", headers=other_h).json()
     assert view["sightings"] == 1 and view["i_saw"] is True
+    assert view["reporter_verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
     assert "volunteers" not in view  # uninvolved users get the limited view (NFR-15)
 
 
