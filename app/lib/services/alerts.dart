@@ -36,7 +36,7 @@ class AlertCenter extends ChangeNotifier {
   final Set<String> _promptsDismissed = {};
   int _tick = 0;
 
-  Future<void> start() async {
+  Future<void> start({bool isVolunteer = false}) async {
     stop();
     try {
       final res = await api.get('/me/notifications', query: {'limit': 1}) as Json;
@@ -44,7 +44,9 @@ class AlertCenter extends ChangeNotifier {
       _lastId = items.isEmpty ? 0 : items.first['id'] as int;
       unread = res['unread'] as int;
     } catch (_) {}
-    await _resumeActiveAlarm();
+    // /volunteer/requests 403s for accounts that haven't activated volunteer
+    // status -- harmless (caught below) but noisy, so skip it outright.
+    if (isVolunteer) await _resumeActiveAlarm();
     _timer = Timer.periodic(const Duration(seconds: 3), (_) => _poll());
   }
 

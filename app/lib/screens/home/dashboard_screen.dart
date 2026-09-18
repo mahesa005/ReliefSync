@@ -46,7 +46,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await context.read<LocationService>().startTracking();
       if (!mounted) return;
-      context.read<AlertCenter>().start();
+      context.read<AlertCenter>().start(isVolunteer: context.read<Session>().isVolunteer);
       _load();
     });
     _timer = Timer.periodic(const Duration(seconds: 6), (_) => _load());
