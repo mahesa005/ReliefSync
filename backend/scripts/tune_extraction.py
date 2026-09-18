@@ -10,18 +10,24 @@ Requires GROQ_API_KEY set in backend/.env (or the environment) to exercise
 the real LLM path -- without it, every case falls back to the rule-based
 path and you'll only see title/description/incident_type, no needs.
 
-Edit CASES below freely; each is (label, report_text). The 10 below are
-seeded to probe the specific guardrails written into DOMAIN_RULES:
-  1. Baseline           -- one clear skill, sanity check
-  2. Multi-skill         -- several skills genuinely needed at once
-  3. No inheritance       -- only P3K stated; must NOT also pull CPR/AED/bidai
-  4. Swimming irrelevant  -- shallow flood; must NOT include Berenang
-  5. Swimming relevant    -- high water, person stranded; SHOULD include Berenang
-  6. General task         -- only distribution/data-entry; should yield no skill
-  7. Vague/low-signal     -- barely any actionable detail
-  8. Mixed language       -- Indonesian + English in the same report
-  9. Out-of-scope skill   -- asks for rubble search-and-rescue (explicitly excluded)
-  10. Large-scale/quota    -- many victims; quota must clamp to MAX_QUOTA (50)
+Edit CASES below freely; each is (label, report_text). Seeded to probe every
+guardrail written into DOMAIN_RULES plus the content-validity guardrail:
+  1. Baseline             -- one clear skill, sanity check
+  2. Multi-skill           -- several skills genuinely needed at once
+  3. No inheritance         -- only P3K stated; must NOT also pull CPR/AED/bidai
+  4. Swimming irrelevant    -- shallow flood; must NOT include Berenang
+  5. Swimming relevant      -- high water, person stranded; SHOULD include Berenang
+  6. General task           -- only distribution/data-entry; should yield no skill
+  7. Vague/low-signal       -- barely any actionable detail (must stay valid=true)
+  8. Mixed language         -- Indonesian + English in the same report
+  9. Out-of-scope skill     -- asks for rubble search-and-rescue (explicitly excluded)
+  10. Large-scale/quota      -- many victims; quota must clamp to MAX_QUOTA (50)
+  11. Gibberish (keyboard mash)     -- must be valid=false, needs empty
+  12. Gibberish (repeated char)     -- must be valid=false, needs empty
+  13. Off-topic spam (coherent but irrelevant) -- must be valid=false
+  14. Skill-matching consistency #1 -- plain single-victim accident, should pick a skill
+  15. Skill-matching consistency #2 -- elderly needs carrying down stairs during fire
+  16. Skill-matching consistency #3 -- skill named explicitly (APAR) by the reporter
 """
 import asyncio
 
@@ -62,6 +68,21 @@ CASES: list[tuple[str, str]] = [
      "Gempa besar mengguncang permukiman padat, banyak korban terluka parah, "
      "diperkirakan lebih dari 100 warga butuh pertolongan pertama dan evakuasi masal "
      "segera dilakukan."),
+    ("11. Gibberish (keyboard mash)",
+     "asdkfj alskdjf qwoeiru zxcvnm qpwoei asdf ghjkl zxcvb"),
+    ("12. Gibberish (repeated char)",
+     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+    ("13. Off-topic spam (coherent but irrelevant)",
+     "Beli baju murah di toko kami, diskon 50% untuk semua produk, buruan sebelum kehabisan!"),
+    ("14. Skill-matching consistency #1 (plain accident)",
+     "Ada kecelakaan motor tunggal di depan minimarket, pengendaranya terluka dan "
+     "butuh pertolongan pertama."),
+    ("15. Skill-matching consistency #2 (carry down stairs)",
+     "Kebakaran di lantai 3 apartemen, ada nenek lumpuh yang tidak bisa jalan sendiri, "
+     "harus digotong turun tangga secepatnya."),
+    ("16. Skill-matching consistency #3 (explicit skill name)",
+     "Api masih kecil di dapur, kami butuh orang yang bisa menggunakan APAR untuk "
+     "memadamkannya sebelum membesar."),
 ]
 
 
@@ -80,6 +101,8 @@ async def run() -> None:
         print(f"laporan   : {text}")
         print(f"source    : {result.source}   incident_type: {result.incident_type}   "
               f"elapsed_ms: {result.elapsed_ms}")
+        print(f"valid     : {result.valid}" + (f"   invalid_reason: {result.invalid_reason}"
+                                               if result.invalid_reason else ""))
         if result.note:
             print(f"note      : {result.note}")
         print(f"title     : {result.title}")
