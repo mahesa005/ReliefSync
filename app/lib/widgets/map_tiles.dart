@@ -15,7 +15,14 @@ import '../theme.dart';
 /// unauthenticated, which CARTO still serves at a lower rate limit.
 const _cartoApiKey = String.fromEnvironment('CARTO_API_KEY');
 
-final osmTiles = TileLayer(
+///
+/// This is a getter, not a `final` value, on purpose: TileLayer keeps
+/// internal per-instance state (its tile cache/manager), so sharing one
+/// object across multiple FlutterMap widgets let whichever map mounted
+/// first "claim" that state, leaving every other map's TileLayer wired up
+/// but never actually requesting tiles. Each call here returns a fresh
+/// instance so every map gets its own.
+TileLayer get osmTiles => TileLayer(
   urlTemplate: 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'
       '${_cartoApiKey.isEmpty ? '' : '?key=$_cartoApiKey'}',
   userAgentPackageName: 'id.steicon.reliefsync',
