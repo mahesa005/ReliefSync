@@ -7,6 +7,7 @@ import '../services/api.dart';
 import '../theme.dart';
 import 'agency_sheet.dart';
 import 'common.dart';
+import 'incident_icon.dart';
 
 /// Detail of a report marker (map, nearby widget, nearby notification):
 /// description, time since reported, "saya melihat kejadian ini", agency
@@ -80,7 +81,7 @@ class _ReportPeekState extends State<_ReportPeek> {
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
-            const Icon(Icons.local_fire_department_rounded, color: AppColors.primary, size: 28),
+            Icon(incidentIcon(r['incident_type'] as String?), color: AppColors.primary, size: 28),
             const SizedBox(width: 8),
             Expanded(child: Text(r['incident_label'] as String, style: Theme.of(context).textTheme.titleLarge)),
             if (!active) const Pill('Selesai', color: AppColors.success),
