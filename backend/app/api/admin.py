@@ -3,9 +3,9 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..app_config import DEFAULTS, Cfg, get_config
-from ..db import get_db
-from ..models import AppConfig, Need, Report, User
+from ..core.app_config import DEFAULTS, Cfg, get_config
+from ..db.models import AppConfig, Need, Report, User
+from ..db.session import get_db
 from ..services import dispatch, simulation
 from .deps import current_user, engine_lock
 

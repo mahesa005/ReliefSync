@@ -6,8 +6,8 @@ from datetime import timedelta
 
 import jwt
 
+from ..db.models import utcnow
 from .config import get_settings
-from .models import utcnow
 
 _PBKDF2_ROUNDS = 200_000
 

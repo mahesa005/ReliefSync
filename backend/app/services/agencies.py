@@ -7,7 +7,7 @@ Jakarta-specific entry. The app calls the number through a native ``tel:`` URI
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Agency, Report
+from ..db.models import Agency, Report
 from .geo import region_of
 
 SEED_AGENCIES = [

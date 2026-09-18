@@ -18,8 +18,8 @@ from functools import lru_cache
 
 from sqlalchemy.orm import Session
 
-from ..config import get_settings
-from ..models import Notification, User
+from ..core.config import get_settings
+from ..db.models import Notification, User
 
 log = logging.getLogger("reliefsync.notify")
 

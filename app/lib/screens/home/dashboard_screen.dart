@@ -348,7 +348,12 @@ class _MapPreviewState extends State<_MapPreview> {
     // meant tiles never got a chance to load (see FAQ: docs.fleaflet.dev).
     if (_lastCenter != null && _lastCenter != center) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _controller.move(center, _controller.camera.zoom);
+        if (!mounted) return;
+        try {
+          _controller.move(center, _controller.camera.zoom);
+        } catch (_) {
+          // See kickTiles() in map_tiles.dart: can race with app teardown.
+        }
       });
     }
     _lastCenter = center;
@@ -367,7 +372,7 @@ class _MapPreviewState extends State<_MapPreview> {
               onTap: (_, _) => open(),
               // Force the first tile fetch -- on web, tiles otherwise sit
               // blank until the first camera event (flutter_map known issue).
-              onMapReady: () => _controller.move(center, 13.5),
+              onMapReady: () => kickTiles(_controller, center, 13.5, mounted: () => mounted),
             ),
             children: [
               osmTiles,

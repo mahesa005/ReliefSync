@@ -1,0 +1,4 @@
+{
+  "CARTO_API_KEY": "your-carto-api-key-here",
+  "API_BASE_URL": "http://192.168.1.10:8000"
+}
