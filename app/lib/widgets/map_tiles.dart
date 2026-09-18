@@ -4,14 +4,20 @@ import 'package:latlong2/latlong.dart';
 
 import '../theme.dart';
 
-/// OpenStreetMap data served via CARTO's free basemap CDN (no API key
-/// needed). The OSM Foundation's own tile.openstreetmap.org is meant for
-/// light/testing use only and throttles app-scale traffic, which showed up
-/// as intermittently blank tiles; CARTO's CDN is built for exactly this.
-/// https://github.com/CartoDB/basemap-styles
+/// OpenStreetMap data served via CARTO's basemap CDN. The OSM Foundation's
+/// own tile.openstreetmap.org is meant for light/testing use only and
+/// throttles app-scale traffic, which showed up as intermittently blank
+/// tiles; CARTO's CDN is built for exactly this.
+///
+/// The API key is never hardcoded: pass it at build/run time with
+/// `--dart-define=CARTO_API_KEY=...` (see `dart_define.example.json` for the
+/// `--dart-define-from-file` equivalent). Without a key the request is sent
+/// unauthenticated, which CARTO still serves at a lower rate limit.
+const _cartoApiKey = String.fromEnvironment('CARTO_API_KEY');
+
 final osmTiles = TileLayer(
-  urlTemplate: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-  subdomains: const ['a', 'b', 'c', 'd'],
+  urlTemplate: 'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'
+      '${_cartoApiKey.isEmpty ? '' : '?key=$_cartoApiKey'}',
   userAgentPackageName: 'id.steicon.reliefsync',
   maxZoom: 20,
 );
