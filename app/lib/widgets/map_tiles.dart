@@ -73,7 +73,14 @@ LatLng pointOf(Map j) => LatLng((j['lat'] as num).toDouble(), (j['lng'] as num).
 void kickTiles(MapController controller, LatLng center, double zoom, {required bool Function() mounted}) {
   for (final delay in const [Duration.zero, Duration(milliseconds: 150), Duration(milliseconds: 400), Duration(milliseconds: 900)]) {
     Future.delayed(delay, () {
-      if (mounted()) controller.move(center, zoom);
+      if (!mounted()) return;
+      try {
+        controller.move(center, zoom);
+      } catch (_) {
+        // A late timer can outlive the app instance (e.g. a Flutter Web hot
+        // restart tears down the engine view while this is still pending) --
+        // that's a dev-time artifact, not a real failure, so swallow it.
+      }
     });
   }
 }

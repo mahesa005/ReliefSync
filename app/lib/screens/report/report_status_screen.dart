@@ -338,7 +338,12 @@ class _LiveMapState extends State<_LiveMap> {
     // blank (see the dashboard's _MapPreview for the same fix).
     if (_lastSite != null && _lastSite != site) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _map.move(site, _map.camera.zoom);
+        if (!mounted) return;
+        try {
+          _map.move(site, _map.camera.zoom);
+        } catch (_) {
+          // See kickTiles() in map_tiles.dart: can race with app teardown.
+        }
       });
     }
     _lastSite = site;

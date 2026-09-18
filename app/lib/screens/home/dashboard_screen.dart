@@ -345,7 +345,12 @@ class _MapPreviewState extends State<_MapPreview> {
     // meant tiles never got a chance to load (see FAQ: docs.fleaflet.dev).
     if (_lastCenter != null && _lastCenter != center) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _controller.move(center, _controller.camera.zoom);
+        if (!mounted) return;
+        try {
+          _controller.move(center, _controller.camera.zoom);
+        } catch (_) {
+          // See kickTiles() in map_tiles.dart: can race with app teardown.
+        }
       });
     }
     _lastCenter = center;
