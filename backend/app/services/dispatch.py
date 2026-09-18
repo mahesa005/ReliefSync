@@ -272,6 +272,10 @@ def accept_offer(db: Session, offer: Offer, now: datetime | None = None) -> Assi
         if existing.status == "dilepas":
             raise DispatchError("Anda sudah dilepas dari laporan ini oleh pelapor.")
         return existing
+    other_active = db.scalar(select(Assignment).where(Assignment.volunteer_id == offer.volunteer_id,
+                                                       Assignment.status == "aktif"))
+    if other_active is not None:
+        raise DispatchError("Anda masih memiliki tugas aktif lain. Selesaikan tugas itu terlebih dahulu.")
     if offer.status == "closed":
         raise DispatchError("Tawaran ini sudah ditutup.")
 

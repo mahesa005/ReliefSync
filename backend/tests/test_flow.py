@@ -350,6 +350,36 @@ def test_volunteer_api_accept_and_task(client, db):
     assert client.post(f"/reports/{rid}/accuracy", headers=vol_h, json={"matches": True}).status_code == 200
 
 
+def test_volunteer_cannot_accept_second_active_task(client, db):
+    """A volunteer already on an active task must be refused a second one,
+    even on a different report (relawan hanya boleh 1 tugas aktif)."""
+    rep1_h, _ = signup(client, db, "081200000016")
+    rep2_h, _ = signup(client, db, "081200000017")
+    vol_h, vol_id = signup(client, db, "081200000018", "Relawan Sibuk", volunteer_skills=["P3K"])
+    client.post("/me/location", headers=vol_h, json={"lat": SITE[0] + 0.005, "lng": SITE[1]})
+
+    rid1 = create_active_report(client, rep1_h, db, quota=1)
+    offer1 = client.get("/volunteer/requests", headers=vol_h).json()[0]
+    task = client.post(f"/offers/{offer1['offer_id']}/accept", headers=vol_h).json()
+    assert task["status"] == "aktif"
+
+    rid2 = create_active_report(client, rep2_h, db, quota=1)
+    reqs = client.get("/volunteer/requests", headers=vol_h).json()
+    assert [r["report_id"] for r in reqs] == [rid2]  # rid1's offer is already accepted, not listed here
+
+    r = client.post(f"/offers/{reqs[0]['offer_id']}/accept", headers=vol_h)
+    assert r.status_code == 409
+    assert "tugas aktif lain" in r.json()["detail"]
+
+    db.expire_all()
+    active = db.scalars(select(Assignment).where(Assignment.volunteer_id == vol_id,
+                                                  Assignment.status == "aktif")).all()
+    assert len(active) == 1 and active[0].report_id == rid1
+
+    view = client.get(f"/reports/{rid2}", headers=rep2_h).json()
+    assert view["needs"][0]["status"] == "belum_ada"  # still unfulfilled, no volunteer took it
+
+
 def test_sighting_and_nearby_widget(client, db):
     rep_h, _ = signup(client, db, "081200000014")
     other_h, _ = signup(client, db, "081200000015")
