@@ -21,7 +21,7 @@ Three pieces, delivered together since each depends on the last:
 - The existing "nearby" notification's action changes from a single implicit "confirm" tap to two explicit choices: **Ya** / **Tidak yakin**.
 - Tapping **Ya** creates a `Sighting` row — same as today, no model change needed here.
 - Tapping **Tidak yakin** creates no row at all and has no effect on anything (matches the existing doc's principle: "tidak dapat memastikan tidak dihitung sebagai bukti bahwa kejadian tidak ada" — absence of confirmation is never treated as evidence against the report).
-- The nearby-notification radius mechanism (`User.nearby_radius_km`) is reused as-is for now. The original "Verifikasi Bencana" doc specified a fixed 200m radius specifically for verification eligibility (tighter than general nearby-awareness, on the theory that "verifying" implies being close enough to actually see it) — **left as an open, deferred decision**, not resolved by this spec. Reusing the existing mechanism is the smaller change; introducing a separate fixed-200m eligibility check is a real option if the team decides plausibility of "did they actually see it" matters more than reusing existing infra.
+- The nearby-notification radius mechanism (`User.nearby_radius_km`) is reused as-is. **Resolved**: staying with the existing configurable radius rather than introducing a separate fixed-200m verification-eligibility check from the original "Verifikasi Bencana" doc.
 
 ## Part 2: Ground Truth Capture
 
@@ -88,7 +88,6 @@ Baseline (50) lands a brand-new-but-past-the-gate account in "Cukup" — neutral
 
 - Recency-weighting or decay of old verifications — a real future improvement, deliberately deferred as unnecessary complexity for now.
 - A statistically-adjusted ratio (e.g. Wilson score interval) as an alternative to raw points — considered, rejected in favor of the simpler, more explainable additive model for a hackathon context.
-- Changing the verification-eligibility radius from the existing configurable mechanism to a fixed 200m — flagged above as an open decision, not resolved here.
 - Any interaction between verifier trust and reporter trust, or between verifier trust and matching/dispatch priority — they stay fully independent, per the existing doc's explicit "jangan digabung" principle.
 - Retroactively backfilling verifier scores for `Sighting` rows that predate this feature — new field defaults handle schema compatibility; no historical backfill logic.
 
