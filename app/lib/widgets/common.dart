@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../app_nav.dart';
 import '../services/api.dart';
 import '../theme.dart';
+import 'photo_viewer.dart';
 
 // ---------------------------------------------------------------------------
 // Formatting helpers
@@ -252,12 +253,15 @@ class PhotoStrip extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         itemCount: urls.length,
         separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.network(Api.instance.resolve(urls[i] as String),
-              width: 120, height: 96, fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(
-                  width: 120, color: AppColors.line, child: const Icon(Icons.broken_image_outlined))),
+        itemBuilder: (_, i) => GestureDetector(
+          onTap: () => showPhotoViewer(context, urls, initial: i),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(Api.instance.resolve(urls[i] as String),
+                width: 120, height: 96, fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => Container(
+                    width: 120, color: AppColors.line, child: const Icon(Icons.broken_image_outlined))),
+          ),
         ),
       ),
     );

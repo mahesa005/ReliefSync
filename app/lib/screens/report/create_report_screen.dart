@@ -9,6 +9,7 @@ import '../../services/location.dart';
 import '../../theme.dart';
 import '../../widgets/agency_sheet.dart';
 import '../../widgets/common.dart';
+import '../../widgets/photo_viewer.dart';
 import 'extraction_confirm_screen.dart';
 import 'location_picker_screen.dart';
 
@@ -346,9 +347,12 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     return Wrap(spacing: 10, runSpacing: 10, children: [
       for (final url in _photos)
         Stack(children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.network(Api.instance.resolve(url), width: 96, height: 96, fit: BoxFit.cover),
+          GestureDetector(
+            onTap: () => showPhotoViewer(context, _photos, initial: _photos.indexOf(url)),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(Api.instance.resolve(url), width: 96, height: 96, fit: BoxFit.cover),
+            ),
           ),
           Positioned(
             right: 2,
