@@ -33,7 +33,11 @@ DOMAIN_RULES = """Aturan pemilihan skill (dari dokumen "Skill Relawan -- ReliefS
 3. "Berenang" hanya relevan jika teks menyebutkan genangan/banjir tinggi secara eksplisit.
 4. Jangan pilih skill untuk tugas umum (distribusi bantuan, pendataan, komunikasi) --
    itu bukan skill teknis.
-5. Jangan mengarang kebutuhan yang tidak didukung oleh teks laporan."""
+5. Jangan mengarang kebutuhan yang tidak didukung oleh teks laporan.
+6. quota HARUS mempertimbangkan jumlah korban/orang yang disebutkan butuh ditangani
+   bersamaan. Satu relawan TIDAK bisa mengevakuasi/menangani banyak korban sekaligus --
+   mis. "5 orang harus dievakuasi" butuh quota evakuasi minimal sekitar 5 (bukan 1),
+   kecuali teks secara eksplisit menyatakan sudah cukup dengan lebih sedikit orang."""
 
 
 class NeedOut(BaseModel):
@@ -179,7 +183,7 @@ async def _llm_extract(text: str, skills: list[Skill]) -> dict:
             json={
                 "model": s.llm_model,
                 "temperature": 0,
-                "max_tokens": 1024,
+                "max_tokens": 2048,
                 "response_format": {"type": "json_object"},
                 "messages": [
                     {"role": "system", "content": system_prompt},

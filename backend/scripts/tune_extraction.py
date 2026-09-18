@@ -83,6 +83,9 @@ CASES: list[tuple[str, str]] = [
     ("16. Skill-matching consistency #3 (explicit skill name)",
      "Api masih kecil di dapur, kami butuh orang yang bisa menggunakan APAR untuk "
      "memadamkannya sebelum membesar."),
+    ("17. Quota-vs-victim-count (5 people stranded on a roof)",
+     "Banjir tinggi, ada 5 orang dalam bahaya jatuh dari genteng rumah, harus segera "
+     "dievakuasi sebelum genteng ambruk."),
 ]
 
 

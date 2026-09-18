@@ -65,9 +65,27 @@ Case 8 (English + Indonesian in the same report) came back with `title: "Fire at
 ### 4. `MAX_QUOTA` clamp untested in practice
 Case 10 (100+ victims) produced `P3K quota=10` and, in an earlier run, `P3K=20, CPR/RJP=10, Penanganan perdarahan=10` — always self-limited well under the 50 clamp. The clamp code path (`_sanitize_needs`'s `min(MAX_QUOTA, ...)`) is still in place as a backstop but has not been observed actually triggering. Not a concern — just noting the safety net remains unverified by these particular inputs.
 
+## Follow-up: quota didn't scale with stated victim count (found via manual testing, fixed)
+
+After this report was first written, manual testing surfaced a real case: a report stating **5 people** in danger of falling from a roof came back with `quota=1` for the relevant skills — the estimate didn't account for the number of people needing simultaneous help at all.
+
+**Root cause 1 (prompt gap):** `DOMAIN_RULES` told the model to "estimate volunteers per skill" but never said the estimate should scale with how many people need help at once. Fixed by adding rule 6: quota must account for the stated number of victims (e.g. "5 orang harus dievakuasi" → quota ≈ 5, not 1), while explicitly not requiring this for single-victim cases.
+
+**Root cause 2 (uncovered while fixing #1):** immediately after lengthening the prompt, the same case started failing with a genuinely different Groq error: `"max completion tokens reached before generating a valid document"` — this is the *exact* mechanism issue #1 above speculated about. The reasoning model was spending its entire `max_tokens: 1024` budget on internal reasoning and running out before it could emit the JSON. Fixed by raising `max_tokens` to `2048`.
+
+**Verified after both fixes**, re-run three times:
+| Case | quota result |
+|---|---|
+| Baseline single-victim ("ada yang pingsan...") | `P3K quota=1` — unchanged, no over-inflation |
+| Single-victim accident | `P3K quota=1` — unchanged |
+| 5-person roof rescue (run 1) | `Penggunaan tandu=5, Teknik memindahkan korban=5` |
+| 5-person roof rescue (run 2, independent) | `Penggunaan tandu=5, Teknik memindahkan korban=5` — consistent |
+
+Both fixes are live in `extraction.py` (`DOMAIN_RULES` rule 6, `max_tokens=2048`) and covered by a new case (17) in `tune_extraction.py`. This also directly addresses issue #1's speculation from earlier in this report and issue #2's nondeterminism is worth re-checking now that `max_tokens` is higher — a tighter token budget forcing the model to cut reasoning short may have been contributing to inconsistent output, not just occasional outright failure.
+
 ## Recommendations
 
 1. **Before the demo**, re-run `tune_extraction.py` a couple more times against cases 5 and 10-16 specifically, since both the JSON-failure and the nondeterminism showed up on repeated runs — a fresh run right before presenting will tell you today's actual reliability, not last week's.
-2. Consider bumping `max_tokens` in `_llm_extract` if JSON-generation failures (#1) recur often — cheap to try, no schema changes needed.
+2. ~~Consider bumping `max_tokens`~~ — done (see follow-up section above): raised to 2048, resolved the JSON-truncation failure in the cases tested since. Keep an eye out for recurrence.
 3. If Indonesian-only titles matter for the demo's polish, add one line to `SYSTEM_PROMPT_TEMPLATE` requiring `title` in Bahasa Indonesia regardless of input language (issue #3).
 4. Keep `tune_extraction.py` around and keep adding real report text to `CASES` as you find edge cases in manual testing — it's the fastest way to get a reproducible before/after comparison when tweaking the prompt.
