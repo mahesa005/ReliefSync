@@ -125,7 +125,7 @@ class Report(Base):
 
     # draft (awaiting extraction confirmation) -> active -> resolved
     status: Mapped[str] = mapped_column(String(20), default="draft", index=True)
-    incident_type: Mapped[str] = mapped_column(String(30), default="kebakaran")
+    incident_type: Mapped[str] = mapped_column(String(30), default="lainnya")
     extraction_source: Mapped[str | None] = mapped_column(String(20))  # llm | rule | form
     extraction_ms: Mapped[int | None] = mapped_column(Integer)
     extraction_note: Mapped[str | None] = mapped_column(Text)

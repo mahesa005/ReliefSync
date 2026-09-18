@@ -98,7 +98,8 @@ def test_llm_success_maps_needs_to_real_skill_ids(monkeypatch, db):
 
 def test_incident_type_classified_from_raw_text_regardless_of_ai():
     assert extraction._incident_type_from("banjir besar merendam kampung") == "banjir"
-    assert extraction._incident_type_from("tidak jelas apa yang terjadi") == "kebakaran"  # default
+    assert extraction._incident_type_from("tidak jelas apa yang terjadi") == "lainnya"  # not assumed to be fire
+    assert extraction._incident_type_from("Penculikan anak di depan sekolah") == "lainnya"
 
 
 def test_incident_type_matches_whole_words_only():

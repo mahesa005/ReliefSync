@@ -28,6 +28,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
   final _formLocation = TextEditingController();
   final _formAccess = TextEditingController();
   final _formNeeds = TextEditingController();
+  final _formOtherIncident = TextEditingController();
 
   bool _formMode = false;
   String _incident = 'kebakaran permukiman';
@@ -45,7 +46,7 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
 
   @override
   void dispose() {
-    for (final c in [_text, _address, _contact, _formLocation, _formAccess, _formNeeds]) {
+    for (final c in [_text, _address, _contact, _formLocation, _formAccess, _formNeeds, _formOtherIncident]) {
       c.dispose();
     }
     super.dispose();
@@ -92,14 +93,18 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
   }
 
+  static const _otherIncident = 'lainnya';
+
   /// The backend's form schema is just {title, description} and it infers the
   /// incident type from keywords in the description, so the chosen type goes
-  /// into the description too -- otherwise it would default to "kebakaran".
+  /// into the description too. Anything else ("Lainnya") is labelled by the
+  /// title, so the typed incident name leads the title.
   Json _structuredBody() {
     final location = _formLocation.text.trim();
     final access = _formAccess.text.trim();
     final needs = _formNeeds.text.trim();
-    final incident = _incident[0].toUpperCase() + _incident.substring(1);
+    final name = _incident == _otherIncident ? _formOtherIncident.text.trim() : _incident;
+    final incident = name[0].toUpperCase() + name.substring(1);
     return {
       'title': location.isEmpty ? incident : '$incident di $location',
       'description': [
@@ -118,6 +123,10 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
     }
     if (!_formMode && _text.text.trim().length < 5) {
       showMessage('Ceritakan kejadiannya minimal satu kalimat, atau pakai formulir.', error: true);
+      return;
+    }
+    if (_formMode && _incident == _otherIncident && _formOtherIncident.text.trim().isEmpty) {
+      showMessage('Tuliskan jenis kejadiannya.', error: true);
       return;
     }
     final body = <String, dynamic>{
@@ -230,9 +239,18 @@ class _CreateReportScreenState extends State<CreateReportScreen> {
             DropdownMenuItem(value: 'banjir', child: Text('Banjir')),
             DropdownMenuItem(value: 'tanah longsor', child: Text('Tanah longsor')),
             DropdownMenuItem(value: 'gempa bumi', child: Text('Gempa bumi')),
+            DropdownMenuItem(value: _otherIncident, child: Text('Lainnya')),
           ],
           onChanged: (v) => setState(() => _incident = v ?? _incident),
         ),
+        if (_incident == _otherIncident) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: _formOtherIncident,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(labelText: 'Jenis kejadian', hintText: 'mis. penculikan, kecelakaan'),
+          ),
+        ],
         const SizedBox(height: 12),
         TextField(
           controller: _formLocation,

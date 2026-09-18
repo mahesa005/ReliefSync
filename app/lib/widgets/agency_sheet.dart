@@ -9,7 +9,7 @@ import 'common.dart';
 /// `tel:` URI (NFR-8). Calling never marks the incident as officially handled
 /// (FR-10.4) -- that is a separate manual status on the report page.
 Future<void> showAgencySheet(BuildContext context,
-    {String? reportId, double? lat, double? lng, String incidentType = 'kebakaran'}) {
+    {String? reportId, double? lat, double? lng, String incidentType = 'lainnya'}) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,

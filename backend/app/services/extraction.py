@@ -56,7 +56,7 @@ class Extraction:
     source: str = "rule"  # llm | rule
     elapsed_ms: int = 0
     note: str | None = None
-    incident_type: str = "kebakaran"
+    incident_type: str = "lainnya"
 
 
 # ---------------------------------------------------------------------------
@@ -72,12 +72,17 @@ _INCIDENT_PATTERNS = [
 ]
 
 
+OTHER_INCIDENT = "lainnya"
+
+
 def _incident_type_from(text: str) -> str:
     lowered = (text or "").lower()
     for itype, pattern in _INCIDENT_PATTERNS:
         if re.search(pattern, lowered):
             return itype
-    return "kebakaran"
+    # Not one of the known disaster types (e.g. "penculikan"): don't pretend
+    # it's a fire -- the report's title is shown as its label instead.
+    return OTHER_INCIDENT
 
 
 # ---------------------------------------------------------------------------

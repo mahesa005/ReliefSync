@@ -364,6 +364,27 @@ def test_config_is_tunable(client, db):
     assert client.get("/config").json()["alarm_seconds"] == 60
 
 
+def test_unknown_incident_type_is_labelled_by_its_title_not_as_fire(client, db):
+    h, _ = signup(client, db, "081200000031")
+    r = client.post("/reports", headers=h, json={
+        "description": "", "input_mode": "form", "lat": SITE[0], "lng": SITE[1],
+        "structured": {"title": "penculikan", "description": "Jenis kejadian: penculikan. Anak dibawa orang asing."},
+    })
+    assert r.status_code == 200, r.text
+    report = r.json()["report"]
+    assert report["incident_type"] == "lainnya"
+    assert report["incident_label"] == "Penculikan"
+    # Agencies for an unknown incident: no fire brigade first.
+    agencies = client.get("/agencies/suggest", headers=h, params={"report_id": report["id"]}).json()
+    assert "Damkar" not in agencies["primary"]["name"]
+
+    # The reporter's corrected title is what the label follows.
+    p3k = skill_id_for(db, "P3K")
+    r = client.post(f"/reports/{report['id']}/confirm", headers=h,
+                    json={"fields": {"title": "Penculikan anak"}, "needs": [{"skill_id": p3k, "quota": 1}]})
+    assert r.json()["incident_label"] == "Penculikan anak"
+
+
 def test_app_payloads_for_skill_catalog(client, db):
     """The request shapes the Flutter app sends: public skill catalog for
     sign-up, volunteer skills by id, a structured-form report, and needs

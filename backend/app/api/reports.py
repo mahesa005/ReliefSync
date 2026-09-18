@@ -472,7 +472,7 @@ def release(assignment_id: str, user: User = Depends(current_user), db: Session 
 
 @router.get("/agencies/suggest")
 def suggest_agencies(report_id: str | None = None, lat: float | None = None, lng: float | None = None,
-                     incident_type: str = "kebakaran", user: User = Depends(current_user),
+                     incident_type: str = "lainnya", user: User = Depends(current_user),
                      db: Session = Depends(get_db)):
     """FR-10.1 / 10.3. Available while reporting too (floating button, 5.6)."""
     if report_id:
