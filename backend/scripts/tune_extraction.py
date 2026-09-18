@@ -106,6 +106,7 @@ async def run() -> None:
               f"elapsed_ms: {result.elapsed_ms}")
         print(f"valid     : {result.valid}" + (f"   invalid_reason: {result.invalid_reason}"
                                                if result.invalid_reason else ""))
+        print(f"victim_count: {result.victim_count}")
         if result.note:
             print(f"note      : {result.note}")
         print(f"title     : {result.title}")

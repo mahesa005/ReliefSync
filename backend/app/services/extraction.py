@@ -34,10 +34,10 @@ DOMAIN_RULES = """Aturan pemilihan skill (dari dokumen "Skill Relawan -- ReliefS
 4. Jangan pilih skill untuk tugas umum (distribusi bantuan, pendataan, komunikasi) --
    itu bukan skill teknis.
 5. Jangan mengarang kebutuhan yang tidak didukung oleh teks laporan.
-6. quota HARUS mempertimbangkan jumlah korban/orang yang disebutkan butuh ditangani
-   bersamaan. Satu relawan TIDAK bisa mengevakuasi/menangani banyak korban sekaligus --
-   mis. "5 orang harus dievakuasi" butuh quota evakuasi minimal sekitar 5 (bukan 1),
-   kecuali teks secara eksplisit menyatakan sudah cukup dengan lebih sedikit orang."""
+6. Isi victim_count dengan jumlah orang yang terdampak/butuh bantuan langsung jika
+   disebutkan atau bisa disimpulkan jelas dari teks (mis. "5 orang di atap" -> 5), atau
+   null jika tidak jelas. quota tiap skill juga harus mempertimbangkan angka ini --
+   satu relawan TIDAK bisa menangani banyak korban sekaligus dalam situasi darurat."""
 
 
 class NeedOut(BaseModel):
@@ -53,6 +53,10 @@ class ExtractionResult(BaseModel):
     # Plain str, not a Literal: an unexpected value should fall back to the
     # regex classification, not throw away the whole extraction.
     incident_type: str = ""
+    # Jumlah orang yang terdampak/butuh bantuan langsung, null jika teks tidak
+    # menyebutkan/tidak jelas -- dipakai sebagai batas bawah quota (METHANE
+    # "Numbers": lihat DOMAIN_RULES rule 6), bukan cuma masukan tekstual bebas.
+    victim_count: int | None = None
     needs: list[NeedOut]
 
 
@@ -69,6 +73,7 @@ class Extraction:
     # reporter) -- only a successful LLM call can set this False.
     valid: bool = True
     invalid_reason: str | None = None
+    victim_count: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +152,8 @@ Dari laporan warga, hasilkan:
 - incident_type: SATU jenis kejadian utama dari daftar di bawah (tulis kodenya persis).
   Jika beberapa cocok, pilih yang paling menentukan bantuan yang dibutuhkan. Jika valid=false,
   isi "{other_incident}".
+- victim_count: jumlah orang yang terdampak/butuh bantuan langsung (lihat aturan 6 di bawah),
+  null jika valid=false atau tidak jelas dari teks.
 - needs: daftar {{skill_id, quota}} -- skill yang benar-benar dibutuhkan berdasarkan teks,
   dan estimasi jumlah relawan per skill. Jika valid=false, kosongkan (list kosong).
 
@@ -203,16 +210,26 @@ async def _llm_extract(text: str, skills: list[Skill]) -> dict:
     return ExtractionResult.model_validate_json(content).model_dump()
 
 
-def _sanitize_needs(raw_needs: list[dict], valid_skill_ids: set[int]) -> list[dict]:
+def _sanitize_needs(raw_needs: list[dict], valid_skill_ids: set[int], victim_count: int | None) -> list[dict]:
     """Drop any need whose skill_id isn't a real catalog entry -- the LLM must
-    never be trusted to only emit valid ids, even with the catalog in-prompt."""
+    never be trusted to only emit valid ids, even with the catalog in-prompt.
+
+    victim_count is enforced as a hard floor on every selected skill's quota,
+    computed here rather than left to the model's one-shot judgment (that's
+    what silently produced quota=1 for a stated 5-person rescue). This can
+    over-provision skills that don't scale 1:1 with victims (e.g. one P3K
+    volunteer can treat several people) -- deliberate: over-provisioning
+    volunteers is the safe failure mode for a disaster-response app,
+    under-provisioning is the dangerous one."""
+    floor = max(1, victim_count) if victim_count else 1
     out, seen = [], set()
     for n in raw_needs:
         skill_id = n["skill_id"]
         if skill_id not in valid_skill_ids or skill_id in seen:
             continue
         seen.add(skill_id)
-        out.append({"skill_id": skill_id, "quota": max(1, min(MAX_QUOTA, int(n["quota"])))})
+        quota = min(max(floor, int(n["quota"])), MAX_QUOTA)  # floor by victim_count, ceil by MAX_QUOTA
+        out.append({"skill_id": skill_id, "quota": quota})
     return out
 
 
@@ -228,15 +245,18 @@ async def extract(text: str, skills: list[Skill]) -> Extraction:
             raw = await asyncio.wait_for(_llm_extract(text, skills), timeout=s.llm_timeout_seconds + 0.5)
             ai_type = (raw.get("incident_type") or "").strip().lower()
             is_valid = bool(raw.get("valid", True))
+            victim_count = raw.get("victim_count")
+            victim_count = int(victim_count) if isinstance(victim_count, (int, float)) and victim_count > 0 else None
             return Extraction(
                 title=raw["title"].strip() or UNKNOWN,
                 description=raw["description"].strip() or text.strip(),
-                needs=_sanitize_needs(raw["needs"], valid_skill_ids) if is_valid else [],
+                needs=_sanitize_needs(raw["needs"], valid_skill_ids, victim_count) if is_valid else [],
                 source="llm",
                 elapsed_ms=int((time.perf_counter() - start) * 1000),
                 incident_type=ai_type if ai_type in INCIDENT_TYPES else incident_type,
                 valid=is_valid,
                 invalid_reason=(raw.get("invalid_reason") or None) if not is_valid else None,
+                victim_count=victim_count if is_valid else None,
             )
         except (TimeoutError, asyncio.TimeoutError):
             note = "AI tidak merespons dalam batas waktu; pilih kebutuhan secara manual."

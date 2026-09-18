@@ -83,6 +83,21 @@ After this report was first written, manual testing surfaced a real case: a repo
 
 Both fixes are live in `extraction.py` (`DOMAIN_RULES` rule 6, `max_tokens=2048`) and covered by a new case (17) in `tune_extraction.py`. This also directly addresses issue #1's speculation from earlier in this report and issue #2's nondeterminism is worth re-checking now that `max_tokens` is higher — a tighter token budget forcing the model to cut reasoning short may have been contributing to inconsistent output, not just occasional outright failure.
 
+### Upgrade: `victim_count` as an explicit field (METHANE-informed)
+
+Researched how emergency services structure incident reports for exactly this kind of situational assessment: the UK's **METHANE** mnemonic (evolved from CHALET → ETHANE, now standard under JESIP) requires **Numbers** (casualty count), **Hazards**, and **Access** as first-class fields extracted from any incident report, not left buried in free text. Applied the "Numbers" piece here (Hazards/Access structuring was scoped out for now — see the design conversation for the fuller option that was considered and deferred):
+
+- `ExtractionResult`/`Extraction` gained `victim_count: int | None`.
+- `_sanitize_needs` now takes `victim_count` and applies it as a **hard floor** on every selected skill's quota, computed in Python — not asked of the model as a one-shot judgment call. This deliberately over-provisions skills that don't scale 1:1 with victims (e.g. one P3K volunteer can treat several people) — the safe failure mode for a disaster-response app.
+
+**Verified with real Groq calls:**
+| Case | `victim_count` | Resulting quota |
+|---|---|---|
+| Roof rescue (5 people stated) | `5` | `P3K=5, Penggunaan tandu=5, Teknik memindahkan korban=5` — all three skills the model picked this run, all correctly floored |
+| Baseline single-victim | `1` | `P3K=1` — no over-inflation |
+
+Note the roof-rescue case picked a *different* combination of skills than earlier runs (previously sometimes just `Berenang` alone, sometimes 4 skills) — the nondeterminism in *which* skills get selected (issue #2) is unchanged, but now it no longer matters for quota correctness: whichever skills it picks, they're all floored to the real headcount.
+
 ## Recommendations
 
 1. **Before the demo**, re-run `tune_extraction.py` a couple more times against cases 5 and 10-16 specifically, since both the JSON-failure and the nondeterminism showed up on repeated runs — a fresh run right before presenting will tell you today's actual reliability, not last week's.

@@ -98,6 +98,44 @@ def test_llm_success_maps_needs_to_real_skill_ids(monkeypatch, db):
     assert result.invalid_reason is None
 
 
+def test_victim_count_floors_quota_even_if_model_undercounts(monkeypatch, db):
+    """The bug this guards against: a report stating 5 people need evacuation
+    came back with quota=1 because nothing forced the connection between the
+    stated headcount and the quota estimate. victim_count is now a hard floor
+    applied in our own code, not left to the model's one-shot judgment."""
+    skills = list(db.scalars(select(Skill)))
+    tandu = next(s for s in skills if s.name == "Penggunaan tandu")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "groq_api_key", "sk-test")
+
+    async def fake_llm(_text, _skills):
+        return {"valid": True, "title": "Evakuasi genteng", "description": "5 orang di genteng",
+                "victim_count": 5, "needs": [{"skill_id": tandu.id, "quota": 1}]}  # model undercounted
+
+    monkeypatch.setattr(extraction, "_llm_extract", fake_llm)
+    result = asyncio.run(extraction.extract("5 orang di genteng butuh evakuasi", skills))
+    assert result.victim_count == 5
+    assert result.needs == [{"skill_id": tandu.id, "quota": 5}]  # floored up to victim_count
+
+
+def test_victim_count_does_not_lower_a_higher_model_quota(monkeypatch, db):
+    """The floor only raises quota, never lowers a quota the model already
+    judged higher than the victim count (e.g. multiple responders per victim
+    for a technically demanding skill)."""
+    skills = list(db.scalars(select(Skill)))
+    p3k = next(s for s in skills if s.name == "P3K")
+    settings = get_settings()
+    monkeypatch.setattr(settings, "groq_api_key", "sk-test")
+
+    async def fake_llm(_text, _skills):
+        return {"valid": True, "title": "t", "description": "d",
+                "victim_count": 2, "needs": [{"skill_id": p3k.id, "quota": 4}]}
+
+    monkeypatch.setattr(extraction, "_llm_extract", fake_llm)
+    result = asyncio.run(extraction.extract("laporan", skills))
+    assert result.needs == [{"skill_id": p3k.id, "quota": 4}]  # untouched, already above the floor
+
+
 def test_llm_flags_gibberish_as_invalid_and_drops_needs(monkeypatch, db):
     """Guardrail: the LLM can mark content as invalid (random characters, spam,
     not describing any real situation); needs are force-emptied server-side
