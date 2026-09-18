@@ -5,6 +5,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from app.db.models import (
+    AccuracyFeedback,
     Assignment,
     Need,
     Notification,
@@ -347,7 +348,10 @@ def test_volunteer_api_accept_and_task(client, db):
 
     prompts = client.get("/me/prompts", headers=vol_h).json()
     assert prompts["accuracy"][0]["report_id"] == rid
-    assert client.post(f"/reports/{rid}/accuracy", headers=vol_h, json={"matches": True}).status_code == 200
+    r = client.post(f"/reports/{rid}/accuracy", headers=vol_h, json={"matches": True, "verdict": "valid"})
+    assert r.status_code == 200, r.text
+    fb = db.scalar(select(AccuracyFeedback).where(AccuracyFeedback.report_id == rid, AccuracyFeedback.user_id == vol_id))
+    assert fb.verdict == "valid"
 
 
 def test_sighting_and_nearby_widget(client, db):
@@ -363,7 +367,6 @@ def test_sighting_and_nearby_widget(client, db):
 
 
 def test_trust_tier_from_accuracy(db):
-    from app.db.models import AccuracyFeedback
     from app.services.trust import trust_tier
     u = User(name="R", phone="081299999999", password_hash="!")
     db.add(u)

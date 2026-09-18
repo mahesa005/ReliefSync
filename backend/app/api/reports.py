@@ -94,6 +94,7 @@ class VoteIn(BaseModel):
 
 class AccuracyIn(BaseModel):
     matches: bool
+    verdict: Literal["valid", "hoax"]
 
 
 class OfficialIn(BaseModel):
@@ -411,7 +412,9 @@ def get_report(report_id: str, user: User = Depends(current_user), db: Session =
 # ---------------------------------------------------------------------------
 @router.post("/reports/{report_id}/sightings")
 def add_sighting(report_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """'Saya melihat kejadian ini' -- display only, does not affect trust (5.7)."""
+    """'Saya melihat kejadian ini' (5.7). Never affects this report's dispatch/matching,
+    and never affects the reporter's own trust -- but does feed the confirming user's
+    own verifier trust once the report resolves (see services/verifier_trust.py)."""
     report = _get_report(db, report_id)
     if report.status != "active":
         raise HTTPException(409, "Laporan ini sudah tidak aktif.")
@@ -453,7 +456,9 @@ def vote(report_id: str, body: VoteIn, user: User = Depends(current_user), db: S
 
 @router.post("/reports/{report_id}/accuracy")
 def accuracy(report_id: str, body: AccuracyIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """FR-7.3: after resolution, involved volunteers say whether the field matched."""
+    """FR-7.3: after resolution, involved volunteers say whether the field matched
+    (-> reporter trust) and whether the event was real or a hoax (-> verifier trust,
+    for whoever confirmed a Sighting on this report -- see verifier_trust.py)."""
     report = _get_report(db, report_id)
     if report.status != "resolved":
         raise HTTPException(409, "Laporan belum selesai.")
@@ -464,7 +469,7 @@ def accuracy(report_id: str, body: AccuracyIn, user: User = Depends(current_user
     if db.scalar(select(AccuracyFeedback).where(AccuracyFeedback.report_id == report.id,
                                                 AccuracyFeedback.user_id == user.id)) is None:
         db.add(AccuracyFeedback(report_id=report.id, reporter_id=report.reporter_id, user_id=user.id,
-                                matches=body.matches))
+                                matches=body.matches, verdict=body.verdict))
         db.commit()
     return {"ok": True}
 
