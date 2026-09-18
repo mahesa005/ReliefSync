@@ -17,7 +17,7 @@ from .api.deps import engine_lock
 from .core.app_config import seed_config
 from .core.config import get_settings
 from .db.session import Base, SessionLocal, engine
-from .services import agencies, confirmation, dispatch, simulation
+from .services import agencies, confirmation, dispatch, simulation, skills
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("reliefsync")
@@ -42,6 +42,7 @@ def init_db() -> None:
     with SessionLocal() as db:
         seed_config(db)
         agencies.seed_agencies(db)
+        skills.seed_skills(db)
         if get_settings().seed_demo_data:
             simulation.seed_demo(db)
 

@@ -20,6 +20,7 @@ from app.core.app_config import seed_config  # noqa: E402
 from app.db.session import Base, SessionLocal, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.services.agencies import seed_agencies  # noqa: E402
+from app.services.skills import seed_skills  # noqa: E402
 
 
 @pytest.fixture
@@ -29,6 +30,7 @@ def db():
     session = SessionLocal()
     seed_config(session)
     seed_agencies(session)
+    seed_skills(session)
     yield session
     session.close()
 

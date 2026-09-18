@@ -30,6 +30,16 @@ def new_id() -> str:
     return str(uuid.uuid4())
 
 
+class Skill(Base):
+    """Canonical skill catalog (Skill Relawan reference doc, IFest 2026 Tim STEICON).
+    id + name only -- domain definitions/groupings live in the LLM prompt, not here."""
+
+    __tablename__ = "skills"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True)
+
+
 # --------------------------------------------------------------------------
 # Accounts. One `User` = base role (can always report). The volunteer status is
 # an optional layer (`VolunteerProfile`), never a separate account type.
