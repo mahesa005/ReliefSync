@@ -108,7 +108,7 @@ Build APK: `flutter build apk --release --dart-define=API_BASE_URL=http://<serve
    Jika demo dilakukan di luar Jakarta dengan GPS asli: *Profil → Sebar relawan simulasi di sekitar saya*.
 2. *Laporkan kejadian* → tulis, misalnya: "Kebakaran rumah di Gang Mawar RT 05, api menjalar. Ada lansia
    terjebak di lantai 2. Gang sempit, mobil damkar susah masuk." → *Kirim laporan*.
-3. Periksa hasil ekstraksi (setiap field punya cuplikan bukti; yang tanpa bukti = "belum diketahui"),
+3. Periksa hasil ekstraksi (judul, deskripsi, dan skill yang dibutuhkan — bisa diedit sebelum konfirmasi),
    atur kebutuhan & jumlah relawan → *Konfirmasi & cari relawan*.
 4. Halaman status menampilkan jumlah relawan yang dihubungi, relawan yang menerima (Utama/Tambahan, "relawan ke-N"),
    posisi mereka bergerak di peta, dan tombol *Instansi resmi* (Call → dialer `tel:`).

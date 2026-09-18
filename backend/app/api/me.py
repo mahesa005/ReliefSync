@@ -14,13 +14,13 @@ from ..db.models import (
     Notification,
     Participant,
     Report,
-    Skill,
     User,
     VolunteerProfile,
     VolunteerSkill,
     utcnow,
 )
 from ..db.session import get_db
+from ..services import skills as skills_service
 from ..services.trust import trust_payload
 from .deps import current_user, iso
 
@@ -128,10 +128,10 @@ def upsert_volunteer(body: VolunteerIn, user: User = Depends(current_user), db: 
     wanted = {s.skill_id: s for s in body.skills}
     if not wanted:
         raise HTTPException(422, "Tambahkan minimal satu kemampuan.")
-    valid_skill_ids = {row.id for row in db.scalars(select(Skill))}
-    unknown = set(wanted) - valid_skill_ids
-    if unknown:
-        raise HTTPException(422, f"Skill tidak dikenal: {sorted(unknown)}")
+    try:
+        skills_service.validate_skill_ids(db, set(wanted))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
     profile = user.volunteer
     if profile is None:
         profile = VolunteerProfile(user_id=user.id, is_active=body.is_active)

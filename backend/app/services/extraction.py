@@ -25,6 +25,7 @@ log = logging.getLogger("reliefsync.extraction")
 FIELDS = ["title", "description"]
 FIELD_LABELS = {"title": "Judul", "description": "Deskripsi"}
 UNKNOWN = "belum diketahui"
+MAX_QUOTA = 50
 
 DOMAIN_RULES = """Aturan pemilihan skill (dari dokumen "Skill Relawan -- ReliefSync"):
 1. Hanya pilih skill dari daftar yang diberikan, dengan skill_id yang persis sama.
@@ -157,7 +158,7 @@ def _sanitize_needs(raw_needs: list[dict], valid_skill_ids: set[int]) -> list[di
         if skill_id not in valid_skill_ids or skill_id in seen:
             continue
         seen.add(skill_id)
-        out.append({"skill_id": skill_id, "quota": max(1, int(n["quota"]))})
+        out.append({"skill_id": skill_id, "quota": max(1, min(MAX_QUOTA, int(n["quota"])))})
     return out
 
 

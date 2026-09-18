@@ -1,7 +1,7 @@
 """Environment settings (infrastructure only).
 
 Business tunables (weights, radius, timeouts, quotas, ...) live in the
-``app_config`` table instead -- see ``app/app_config.py``.
+``app_config`` table instead -- see ``app/core/app_config.py``.
 """
 from functools import lru_cache
 from pathlib import Path

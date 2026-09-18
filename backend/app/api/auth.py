@@ -11,6 +11,7 @@ from ..core.config import get_settings
 from ..core.security import create_token, generate_otp, hash_password, normalize_phone, verify_password
 from ..db.models import User, VolunteerProfile, VolunteerSkill, utcnow
 from ..db.session import get_db
+from ..services import skills as skills_service
 from .me import SkillIn, user_payload
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -70,8 +71,13 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
         user.name = body.name.strip()
         user.password_hash = hash_password(body.password)
     if body.become_volunteer and user.volunteer is None:
+        wanted = {s.skill_id: s for s in body.skills}
+        try:
+            skills_service.validate_skill_ids(db, set(wanted))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
         db.add(VolunteerProfile(user_id=user.id, is_active=True))
-        for s in {s.skill_id: s for s in body.skills}.values():
+        for s in wanted.values():
             db.add(VolunteerSkill(user_id=user.id, skill_id=s.skill_id, evidence=s.evidence))
     out = _issue_otp(user)
     db.commit()

@@ -87,5 +87,6 @@ Today, `dispatch.py` runs fully independent batch escalation per `Need` row. Rec
 ## Migration/rollout notes
 
 - No manual SQL needed for either environment — see Part 1's model-change note.
+- **Caveat**: this only holds for tables `create_all()` hasn't created yet. This branch changes columns on `needs`, `volunteer_skills`, and `assignments` — tables that already exist on any previously-deployed instance. Before deploying this branch to an existing database (local SQLite file or a Supabase instance from an earlier deploy), those tables must be dropped (or the whole schema reset) so `create_all()` recreates them with the new columns — `create_all()` never alters existing tables.
 - `simulation.py`'s demo/seed data must be updated in the same change, since `VolunteerSkill` becomes FK-based — old free-text skill names won't resolve against the new catalog.
 - **Frontend impact**: the Flutter app currently displays `category`/`skill` strings from the API (`reports.py`, `volunteer.py` responses). Those response shapes change to `skill_id`/`skill_name`-based — the app-side rendering needs a matching update, tracked separately from this backend spec.

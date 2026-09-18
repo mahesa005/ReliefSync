@@ -57,9 +57,9 @@ class Cfg:
     """Per-request/per-tick view of the config table, loaded in one query.
 
     The table is small (~25 rows) and every request touches several different
-    keys (matching weights, batch/quorum settings, the need catalog, ...);
-    fetching them one at a time was ~10 extra round trips per report against a
-    remote DB (~2s), so we read the whole table up front instead."""
+    keys (matching weights, batch/quorum settings, ...); fetching them one at a
+    time was ~10 extra round trips per report against a remote DB (~2s), so we
+    read the whole table up front instead."""
 
     def __init__(self, db: Session):
         self._db = db

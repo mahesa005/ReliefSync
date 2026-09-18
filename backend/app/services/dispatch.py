@@ -372,17 +372,24 @@ def participate(db: Session, report: Report, user: User, now: datetime | None = 
 
 
 def release_assignment(db: Session, assignment: Assignment) -> None:
-    """Reporter releases a volunteer (4.11: volunteers cannot cancel themselves)."""
+    """Reporter releases a volunteer (4.11: volunteers cannot cancel themselves).
+    Also refreshes any OTHER need this assignment was cross-skill-credited toward
+    (see apply_cross_skill_credit) -- otherwise it stays "penuh" forever, even
+    after its only coverage is gone, and dispatch.tick can never re-alarm it."""
     assignment.status = "dilepas"
     p = db.scalar(select(Participant).where(Participant.report_id == assignment.report_id,
                                             Participant.user_id == assignment.volunteer_id))
     if p is not None:
         p.excluded = True
-    need = db.get(Need, assignment.need_id)
+    report = db.get(Report, assignment.report_id)
+    credited_skill_ids = set(assignment.credited_skill_ids or [])
     db.flush()
-    refresh_need_status(db, need)
-    if need.status != "penuh":
-        need.exhausted = False if _has_waiting(db, need) else need.exhausted
+    for need in report.needs:
+        if need.id != assignment.need_id and need.skill_id not in credited_skill_ids:
+            continue
+        refresh_need_status(db, need)
+        if need.status != "penuh":
+            need.exhausted = False if _has_waiting(db, need) else need.exhausted
 
 
 def _has_waiting(db: Session, need: Need) -> bool:

@@ -30,3 +30,12 @@ def seed_skills(db: Session) -> None:
 
 def list_skills(db: Session) -> list[Skill]:
     return list(db.scalars(select(Skill).order_by(Skill.id)))
+
+
+def validate_skill_ids(db: Session, skill_ids: set[int]) -> None:
+    """Raise ValueError listing any id not in the catalog. Callers translate
+    to their own HTTP error (422) with the appropriate message."""
+    valid = {row.id for row in db.scalars(select(Skill))}
+    unknown = skill_ids - valid
+    if unknown:
+        raise ValueError(f"Skill tidak dikenal: {sorted(unknown)}")

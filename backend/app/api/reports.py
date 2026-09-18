@@ -3,7 +3,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,7 @@ from ..db.models import (
 from ..db.session import get_db
 from ..services import agencies, confirmation, dispatch, extraction, storage
 from ..services import skills as skills_service
+from ..services.extraction import MAX_QUOTA
 from ..services.geo import haversine_km
 from ..services.trust import trust_payload
 from .deps import current_user, engine_lock, iso
@@ -36,7 +37,12 @@ router = APIRouter(tags=["reports"])
 # Schemas
 # ---------------------------------------------------------------------------
 class StructuredIn(BaseModel):
-    """Direct structured form -- the reporter may skip free text (5.5 step 2)."""
+    """Direct structured form -- the reporter may skip free text (5.5 step 2).
+    extra="forbid": a stale client still posting the pre-Task-4 field names
+    (jenis_kejadian, lokasi_disebutkan, ...) must get a loud 422, not a
+    silently blank report (those fields would otherwise just be ignored)."""
+    model_config = ConfigDict(extra="forbid")
+
     title: str = ""
     description: str = Field(default="", max_length=4000)
 
@@ -55,7 +61,7 @@ class ReportIn(BaseModel):
 
 class NeedIn(BaseModel):
     skill_id: int
-    quota: int = Field(ge=1, le=50)
+    quota: int = Field(ge=1, le=MAX_QUOTA)
 
 
 class ConfirmIn(BaseModel):

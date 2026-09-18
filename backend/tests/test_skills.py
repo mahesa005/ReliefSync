@@ -18,10 +18,8 @@ def test_seed_skills_is_idempotent(db):
     assert len(rows) == len(SEED_SKILLS)
 
 
-def test_list_skills_returns_ordered_by_id():
-    from app.db.session import SessionLocal
-    with SessionLocal() as session:
-        seed_skills(session)
-        skills = list_skills(session)
-        assert [s.name for s in skills] == SEED_SKILLS
-        assert all(isinstance(s.id, int) for s in skills)
+def test_list_skills_returns_ordered_by_id(db):
+    seed_skills(db)
+    skills = list_skills(db)
+    assert [s.name for s in skills] == SEED_SKILLS
+    assert all(isinstance(s.id, int) for s in skills)
