@@ -90,6 +90,7 @@ class _ReportPeekState extends State<_ReportPeek> {
             Pill('Dilaporkan ${durationSince(r['received_at'])} lalu', icon: Icons.schedule_rounded),
             if (r['distance_km'] != null) Pill('${km(r['distance_km'])} dari Anda', icon: Icons.near_me_rounded),
             TrustBadge(r['reporter_trust'] as Json?),
+            VerifierTrustBadge(r['reporter_verifier_trust'] as Json?),
           ]),
           const SizedBox(height: 14),
           if ((r['raw_text'] as String).isNotEmpty)

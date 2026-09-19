@@ -137,6 +137,11 @@ class _ReportStatusScreenState extends State<ReportStatusScreen> {
             Text('Dilaporkan ${timeAgo(r['received_at'])}'
                 '${r['address_text'] != null ? ' · ${r['address_text']}' : ''}',
                 style: const TextStyle(color: AppColors.inkMuted)),
+            const SizedBox(height: 8),
+            Wrap(spacing: 6, runSpacing: 6, children: [
+              TrustBadge(r['reporter_trust'] as Json?),
+              VerifierTrustBadge(r['reporter_verifier_trust'] as Json?),
+            ]),
             if (!active) ...[
               const SizedBox(height: 10),
               Text(r['resolved_by'] == 'timeout'

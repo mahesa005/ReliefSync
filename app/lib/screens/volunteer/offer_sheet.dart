@@ -104,6 +104,7 @@ class OfferDetails extends StatelessWidget {
       Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Text('Pelapor:', style: TextStyle(color: muted, fontWeight: FontWeight.w700)),
         TrustBadge(offer['reporter_trust'] as Json?),
+        VerifierTrustBadge(offer['reporter_verifier_trust'] as Json?),
         if (offer['contact_phone_masked'] != null)
           Pill(offer['contact_phone_masked'] as String, icon: Icons.phone_rounded,
               color: onDark ? Colors.white : AppColors.inkMuted),

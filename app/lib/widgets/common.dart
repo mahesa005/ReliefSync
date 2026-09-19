@@ -113,6 +113,29 @@ class TrustBadge extends StatelessWidget {
   }
 }
 
+/// Verifier credibility (separate from reporter trust, see verifier_trust.py):
+/// how reliable this person's "saya melihat kejadian ini" confirmations have
+/// been, as one of 5 tiers, never a raw number. Always uses the same "eye"
+/// icon and a "Verifikator:" prefix -- distinct on sight from [TrustBadge]
+/// even in a brand-new "Akun Baru" state, where the two would otherwise read
+/// as duplicate badges.
+class VerifierTrustBadge extends StatelessWidget {
+  const VerifierTrustBadge(this.trust, {super.key});
+  final Json? trust;
+
+  @override
+  Widget build(BuildContext context) {
+    final tier = trust?['tier'] ?? 'akun_baru';
+    final label = (trust?['label'] ?? 'Akun Baru') as String;
+    final color = switch (tier) {
+      'sangat_baik' || 'baik' => AppColors.success,
+      'rendah' => AppColors.warning,
+      _ => AppColors.info,
+    };
+    return Pill('Verifikator: $label', color: color, icon: Icons.visibility_rounded);
+  }
+}
+
 /// Need status (FR-8.1).
 class NeedStatusPill extends StatelessWidget {
   const NeedStatusPill(this.status, {super.key, this.exhausted = false});

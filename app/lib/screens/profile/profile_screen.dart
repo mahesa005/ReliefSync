@@ -80,6 +80,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 6),
                   Wrap(spacing: 6, runSpacing: 6, children: [
                     TrustBadge(user['trust'] as Json?),
+                    VerifierTrustBadge(user['verifier_trust'] as Json?),
                     if (v != null)
                       Pill(v['is_active'] == true ? 'Relawan aktif' : 'Relawan nonaktif',
                           color: v['is_active'] == true ? AppColors.success : AppColors.inkMuted),
