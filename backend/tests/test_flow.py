@@ -5,6 +5,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from app.db.models import (
+    AccuracyFeedback,
     Assignment,
     Need,
     Notification,
@@ -90,6 +91,7 @@ def test_register_login_and_otp(client):
     assert me["phone_masked"] == "0812****2222"
     assert me["volunteer"] is None
     assert me["trust"]["label"] == "Akun baru"
+    assert me["verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
 
 
 def test_report_requires_account(client):
@@ -329,10 +331,12 @@ def test_volunteer_api_accept_and_task(client, db):
     reqs = client.get("/volunteer/requests", headers=vol_h).json()
     assert len(reqs) == 1 and reqs[0]["alarm_active"] is True
     assert reqs[0]["reporter_trust"]["label"] == "Akun baru"  # FR-9.3
+    assert reqs[0]["reporter_verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
     assert "08" in reqs[0]["contact_phone_masked"] and "*" in reqs[0]["contact_phone_masked"]
 
     task = client.post(f"/offers/{reqs[0]['offer_id']}/accept", headers=vol_h).json()
     assert task["role"] == "utama" and task["order_number"] == 1
+    assert task["reporter_verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
     task = client.post(f"/assignments/{task['id']}/travel-status", headers=vol_h, json={"status": "sampai"}).json()
     assert task["travel_status"] == "sampai"
 
@@ -347,7 +351,10 @@ def test_volunteer_api_accept_and_task(client, db):
 
     prompts = client.get("/me/prompts", headers=vol_h).json()
     assert prompts["accuracy"][0]["report_id"] == rid
-    assert client.post(f"/reports/{rid}/accuracy", headers=vol_h, json={"matches": True}).status_code == 200
+    r = client.post(f"/reports/{rid}/accuracy", headers=vol_h, json={"matches": True, "verdict": "valid"})
+    assert r.status_code == 200, r.text
+    fb = db.scalar(select(AccuracyFeedback).where(AccuracyFeedback.report_id == rid, AccuracyFeedback.user_id == vol_id))
+    assert fb.verdict == "valid"
 
 
 def test_volunteer_cannot_accept_second_active_task(client, db):
@@ -389,11 +396,51 @@ def test_sighting_and_nearby_widget(client, db):
     assert [r["id"] for r in nearby["notified"]] == [rid]
     view = client.post(f"/reports/{rid}/sightings", headers=other_h).json()
     assert view["sightings"] == 1 and view["i_saw"] is True
+    assert view["reporter_verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
     assert "volunteers" not in view  # uninvolved users get the limited view (NFR-15)
 
 
+def test_hoax_verdict_lowers_verifiers_trust_score_via_http(client, db):
+    """HTTP-level round trip: a real Sighting (POST .../sightings) plus a real
+    hoax accuracy submission (POST .../accuracy) must actually move the
+    verifying user's score as seen through GET /me -- not just the
+    service-level math covered by test_verifier_trust.py."""
+    rep_h, _ = signup(client, db, "081200000040")
+    vol_h, vol_id = signup(client, db, "081200000041", "Relawan Asli", volunteer_skills=["P3K"])
+    client.post("/me/location", headers=vol_h, json={"lat": SITE[0] + 0.005, "lng": SITE[1]})
+    verifier_h, _ = signup(client, db, "081200000042", "Verifier")
+
+    rid = create_active_report(client, rep_h, db, quota=1)
+
+    # baseline, before this user has verified anything
+    me = client.get("/me", headers=verifier_h).json()
+    assert me["verifier_trust"] == {"tier": "akun_baru", "label": "Akun Baru", "score": 50}
+
+    # verifier confirms they saw the incident, while the report is still active
+    view = client.post(f"/reports/{rid}/sightings", headers=verifier_h).json()
+    assert view["i_saw"] is True
+
+    # get the report resolved (single volunteer, same pattern as
+    # test_volunteer_api_accept_and_task)
+    reqs = client.get("/volunteer/requests", headers=vol_h).json()
+    task = client.post(f"/offers/{reqs[0]['offer_id']}/accept", headers=vol_h).json()
+    client.post(f"/assignments/{task['id']}/travel-status", headers=vol_h, json={"status": "sampai"})
+    client.post(f"/reports/{rid}/vote", headers=vol_h, json={"done": True})
+    view = client.post(f"/reports/{rid}/vote", headers=rep_h, json={"done": True}).json()
+    assert view["status"] == "resolved"
+
+    # the involved volunteer settles the ground truth as a hoax
+    r = client.post(f"/reports/{rid}/accuracy", headers=vol_h, json={"matches": False, "verdict": "hoax"})
+    assert r.status_code == 200, r.text
+
+    # the verifier's score has moved: BASELINE 50 + WRONG_DELTA -3 = 47.
+    # evaluated_count (1) is still below the tier gate (3), so tier stays
+    # "akun_baru" -- only the numeric score is asserted here.
+    me = client.get("/me", headers=verifier_h).json()
+    assert me["verifier_trust"]["score"] == 47
+
+
 def test_trust_tier_from_accuracy(db):
-    from app.db.models import AccuracyFeedback
     from app.services.trust import trust_tier
     u = User(name="R", phone="081299999999", password_hash="!")
     db.add(u)

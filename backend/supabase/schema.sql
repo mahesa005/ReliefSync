@@ -61,8 +61,8 @@ CREATE TABLE notifications (
 	FOREIGN KEY(user_id) REFERENCES users (id)
 );
 
-CREATE INDEX ix_notifications_created_at ON notifications (created_at);
 CREATE INDEX ix_notifications_user_id ON notifications (user_id);
+CREATE INDEX ix_notifications_created_at ON notifications (created_at);
 
 CREATE TABLE reports (
 	id VARCHAR(36) NOT NULL, 
@@ -81,6 +81,7 @@ CREATE TABLE reports (
 	extraction_source VARCHAR(20), 
 	extraction_ms INTEGER, 
 	extraction_note TEXT, 
+	content_valid BOOLEAN NOT NULL, 
 	confirmed_at TIMESTAMP WITHOUT TIME ZONE, 
 	resolution_started_at TIMESTAMP WITHOUT TIME ZONE, 
 	resolved_at TIMESTAMP WITHOUT TIME ZONE, 
@@ -113,6 +114,7 @@ CREATE TABLE accuracy_feedback (
 	reporter_id VARCHAR(36) NOT NULL, 
 	user_id VARCHAR(36) NOT NULL, 
 	matches BOOLEAN NOT NULL, 
+	verdict VARCHAR(10) NOT NULL, 
 	created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL, 
 	PRIMARY KEY (id), 
 	UNIQUE (report_id, user_id), 
@@ -135,8 +137,8 @@ CREATE TABLE nearby_notices (
 	FOREIGN KEY(user_id) REFERENCES users (id)
 );
 
-CREATE INDEX ix_nearby_notices_user_id ON nearby_notices (user_id);
 CREATE INDEX ix_nearby_notices_report_id ON nearby_notices (report_id);
+CREATE INDEX ix_nearby_notices_user_id ON nearby_notices (user_id);
 
 CREATE TABLE needs (
 	id VARCHAR(36) NOT NULL, 
@@ -153,8 +155,8 @@ CREATE TABLE needs (
 	FOREIGN KEY(skill_id) REFERENCES skills (id)
 );
 
-CREATE INDEX ix_needs_skill_id ON needs (skill_id);
 CREATE INDEX ix_needs_report_id ON needs (report_id);
+CREATE INDEX ix_needs_skill_id ON needs (skill_id);
 
 CREATE TABLE participants (
 	id SERIAL NOT NULL, 
@@ -237,9 +239,9 @@ CREATE TABLE assignments (
 	FOREIGN KEY(volunteer_id) REFERENCES users (id)
 );
 
+CREATE INDEX ix_assignments_need_id ON assignments (need_id);
 CREATE INDEX ix_assignments_report_id ON assignments (report_id);
 CREATE INDEX ix_assignments_volunteer_id ON assignments (volunteer_id);
-CREATE INDEX ix_assignments_need_id ON assignments (need_id);
 
 CREATE TABLE offers (
 	id VARCHAR(36) NOT NULL, 
@@ -263,10 +265,10 @@ CREATE TABLE offers (
 	FOREIGN KEY(volunteer_id) REFERENCES users (id)
 );
 
-CREATE INDEX ix_offers_report_id ON offers (report_id);
-CREATE INDEX ix_offers_volunteer_id ON offers (volunteer_id);
 CREATE INDEX ix_offers_status ON offers (status);
 CREATE INDEX ix_offers_need_id ON offers (need_id);
+CREATE INDEX ix_offers_report_id ON offers (report_id);
+CREATE INDEX ix_offers_volunteer_id ON offers (volunteer_id);
 
 -- The FastAPI backend is the only database client (it connects as the postgres role,
 -- which bypasses RLS). Enabling RLS without policies keeps every table closed to the

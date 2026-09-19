@@ -22,6 +22,7 @@ from ..db.models import (
 from ..db.session import get_db
 from ..services import skills as skills_service
 from ..services.trust import trust_payload
+from ..services.verifier_trust import verifier_payload
 from .deps import current_user, iso
 
 router = APIRouter(prefix="/me", tags=["me"])
@@ -96,6 +97,7 @@ def user_payload(db: Session, user: User) -> dict:
         "lat": user.lat,
         "lng": user.lng,
         "trust": trust_payload(db, user.id),
+        "verifier_trust": verifier_payload(db, user.id),
         "created_at": iso(user.created_at),
         "volunteer": None if v is None else {
             "is_active": v.is_active,

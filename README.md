@@ -135,6 +135,7 @@ Dokumen konteks menyisakan beberapa hal terbuka. Implementasi memilih nilai defa
 | #12 Trust tier | "Akun baru" sampai 3 laporan dinilai; "Riwayat baik" jika ≥70% laporan sesuai. |
 | Periode popup konfirmasi | 120 detik (AFK jika satu periode tidak menjawab). |
 | Mekanisme update status | Polling (3–6 dtk), memenuhi NFR-3 tanpa server WebSocket. |
+| Verifier trust | Skor independen dari reporter trust, berbasis poin (+2 benar/-3 salah dari verdict valid/hoax pasca-resolusi), bukan rasio. Lihat docs/superpowers/specs/2026-09-19-verifier-trust-design.md. |
 
 ## 4. Struktur
 
