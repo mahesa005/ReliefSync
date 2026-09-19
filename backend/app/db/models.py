@@ -253,7 +253,9 @@ class Participant(Base):
 
 
 class Sighting(Base):
-    """'Saya melihat kejadian ini' -- display only, never feeds trust (5.7)."""
+    """'Saya melihat kejadian ini' (5.7). Feeds verifier trust once the report's
+    outcome is known (see services/verifier_trust.py) -- never affects reporter
+    trust, matching, or dispatch."""
 
     __tablename__ = "sightings"
     __table_args__ = (UniqueConstraint("report_id", "user_id"),)
@@ -265,7 +267,9 @@ class Sighting(Base):
 
 
 class AccuracyFeedback(Base):
-    """Post-resolution 'did the field match the report?' (FR-7.3) -> trust score."""
+    """Post-resolution 'did the field match the report?' (FR-7.3) -> reporter trust,
+    and 'was this event real or a hoax?' (verdict) -> independent verifier trust
+    (see services/verifier_trust.py -- these two scores are never combined)."""
 
     __tablename__ = "accuracy_feedback"
     __table_args__ = (UniqueConstraint("report_id", "user_id"),)
@@ -275,6 +279,10 @@ class AccuracyFeedback(Base):
     reporter_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     matches: Mapped[bool] = mapped_column(Boolean)
+    # "valid" | "hoax" -- default exists only for rows written before this column
+    # existed on an already-deployed database; new submissions always provide it
+    # explicitly via AccuracyIn (no default there).
+    verdict: Mapped[str] = mapped_column(String(10), default="valid")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

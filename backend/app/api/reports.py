@@ -28,6 +28,7 @@ from ..services import skills as skills_service
 from ..services.extraction import MAX_QUOTA
 from ..services.geo import haversine_km
 from ..services.trust import trust_payload
+from ..services.verifier_trust import verifier_payload
 from .deps import current_user, engine_lock, iso
 
 router = APIRouter(tags=["reports"])
@@ -94,6 +95,9 @@ class VoteIn(BaseModel):
 
 class AccuracyIn(BaseModel):
     matches: bool
+    # Temporary default until the Flutter hoax/valid UI ships (tracked as a follow-up,
+    # not part of this branch) -- the currently-shipped client never sends this field.
+    verdict: Literal["valid", "hoax"] = "valid"
 
 
 class OfficialIn(BaseModel):
@@ -171,6 +175,7 @@ def report_view(db: Session, report: Report, viewer: User) -> dict:
         "resolved_by": report.resolved_by,
         "photo_urls": report.photo_urls or [],
         "reporter_trust": trust_payload(db, report.reporter_id, cfg),
+        "reporter_verifier_trust": verifier_payload(db, report.reporter_id),
         "is_reporter": is_reporter,
         "needs": needs,
         "needs_total": sum(n["quota"] for n in needs),
@@ -413,7 +418,9 @@ def get_report(report_id: str, user: User = Depends(current_user), db: Session =
 # ---------------------------------------------------------------------------
 @router.post("/reports/{report_id}/sightings")
 def add_sighting(report_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """'Saya melihat kejadian ini' -- display only, does not affect trust (5.7)."""
+    """'Saya melihat kejadian ini' (5.7). Never affects this report's dispatch/matching,
+    and never affects the reporter's own trust -- but does feed the confirming user's
+    own verifier trust once the report resolves (see services/verifier_trust.py)."""
     report = _get_report(db, report_id)
     if report.status != "active":
         raise HTTPException(409, "Laporan ini sudah tidak aktif.")
@@ -455,7 +462,9 @@ def vote(report_id: str, body: VoteIn, user: User = Depends(current_user), db: S
 
 @router.post("/reports/{report_id}/accuracy")
 def accuracy(report_id: str, body: AccuracyIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """FR-7.3: after resolution, involved volunteers say whether the field matched."""
+    """FR-7.3: after resolution, involved volunteers say whether the field matched
+    (-> reporter trust) and whether the event was real or a hoax (-> verifier trust,
+    for whoever confirmed a Sighting on this report -- see verifier_trust.py)."""
     report = _get_report(db, report_id)
     if report.status != "resolved":
         raise HTTPException(409, "Laporan belum selesai.")
@@ -466,7 +475,7 @@ def accuracy(report_id: str, body: AccuracyIn, user: User = Depends(current_user
     if db.scalar(select(AccuracyFeedback).where(AccuracyFeedback.report_id == report.id,
                                                 AccuracyFeedback.user_id == user.id)) is None:
         db.add(AccuracyFeedback(report_id=report.id, reporter_id=report.reporter_id, user_id=user.id,
-                                matches=body.matches))
+                                matches=body.matches, verdict=body.verdict))
         db.commit()
     return {"ok": True}
 

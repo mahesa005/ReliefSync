@@ -151,6 +151,7 @@ class _TaskScreenState extends State<TaskScreen> {
             const SizedBox(height: 10),
             Wrap(spacing: 8, runSpacing: 6, children: [
               TrustBadge(t['reporter_trust'] as Json?),
+              VerifierTrustBadge(t['reporter_verifier_trust'] as Json?),
               if (t['contact_phone_masked'] != null)
                 Pill(t['contact_phone_masked'] as String, icon: Icons.phone_rounded),
             ]),
